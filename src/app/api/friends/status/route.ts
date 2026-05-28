@@ -1,34 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
 
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
-
 // GET /api/friends/status?username=X
 // Returns: { status: null | 'pending_sent' | 'pending_received' | 'accepted', id?: string }
 export async function GET(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return NextResponse.json({ status: null });
 
-  const { data: { user } } = await anon.auth.getUser(token);
+  const { data: { user } } = await getAnonClient().auth.getUser(token);
   if (!user) return NextResponse.json({ status: null });
 
   const targetUsername = req.nextUrl.searchParams.get("username");
   if (!targetUsername) return NextResponse.json({ status: null });
 
-  const { data: target } = await admin
+  const { data: target } = await getAdminClient()
     .from("profiles").select("id").eq("username", targetUsername).single();
   if (!target) return NextResponse.json({ status: null });
 
   // Own profile
   if (target.id === user.id) return NextResponse.json({ status: "self" });
 
-  const { data: row } = await admin
+  const { data: row } = await getAdminClient()
     .from("friendships")
     .select("id, status, sender_id")
     .or(`and(sender_id.eq.${user.id},receiver_id.eq.${target.id}),and(sender_id.eq.${target.id},receiver_id.eq.${user.id})`)

@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
 
-function getUserClient(token: string) {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth: { autoRefreshToken: false, persistSession: false },
-    },
-  );
+function getUserClient(_token: string) {
+  return getAnonClient();
 }
 
 function getToken(req: NextRequest) {

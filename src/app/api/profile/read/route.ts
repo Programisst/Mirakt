@@ -1,29 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
 
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
-
 export async function POST(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: { user }, error } = await anon.auth.getUser(token);
+  const { data: { user }, error } = await getAnonClient().auth.getUser(token);
   if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: profile } = await admin
+  const { data: profile } = await getAdminClient()
     .from("profiles")
     .select("reads_count")
     .eq("id", user.id)
     .single();
 
-  await admin
+  await getAdminClient()
     .from("profiles")
     .upsert({
       id: user.id,

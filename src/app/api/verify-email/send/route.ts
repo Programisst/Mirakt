@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
 import { Redis } from "@upstash/redis";
+
+function getRedis() {
+  return new Redis({ url: process.env.UPSTASH_REDIS_REST_URL ?? "", token: process.env.UPSTASH_REDIS_REST_TOKEN ?? "" });
+}
 import nodemailer from "nodemailer";
 import crypto from "crypto";
 
-const redis = Redis.fromEnv();
-
-function getUserClient(token: string) {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { autoRefreshToken: false, persistSession: false } }
-  );
+function getUserClient(_token: string) {
+  return getAnonClient();
 }
 
 export async function POST(req: NextRequest) {
@@ -23,7 +21,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const verifyToken = crypto.randomBytes(32).toString("hex");
-  await redis.set(`verify_email:${verifyToken}`, user.id, { ex: 60 * 60 * 24 });
+  await getRedis().set(`verify_email:${verifyToken}`, user.id, { ex: 60 * 60 * 24 });
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://mirakt.ru";
   const link = `${baseUrl}/api/verify-email/confirm?token=${verifyToken}`;

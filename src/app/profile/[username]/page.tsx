@@ -1,15 +1,10 @@
 import { notFound } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { getAdminClient } from "@/lib/supabase-server";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { OnlineStatus } from "@/components/OnlineStatus";
 import { ProfilePageActions } from "@/components/ProfilePageActions";
 
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
 
 const GOLD     = "rgba(212,175,55,0.85)";
 const GOLD_DIM = "rgba(212,175,55,0.4)";
@@ -38,7 +33,7 @@ export default async function PublicProfilePage(
 ) {
   const { username } = await params;
 
-  const { data: profile } = await admin
+  const { data: profile } = await getAdminClient()
     .from("profiles")
     .select("id, username, avatar_url, verified, reads_count")
     .eq("username", username)
@@ -46,7 +41,7 @@ export default async function PublicProfilePage(
 
   if (!profile?.username) notFound();
 
-  const { data: { user } } = await admin.auth.admin.getUserById(profile.id);
+  const { data: { user } } = await getAdminClient().auth.admin.getUserById(profile.id);
   const createdAt = user?.created_at
     ? new Date(user.created_at).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })
     : "—";

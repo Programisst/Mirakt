@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
 
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
-
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q")?.trim() ?? "";
   if (q.length < 1) return NextResponse.json([]);
 
-  const { data, error } = await admin
+  const { data, error } = await getAdminClient()
     .from("profiles")
     .select("username, avatar_url, verified")
     .ilike("username", `%${q}%`)

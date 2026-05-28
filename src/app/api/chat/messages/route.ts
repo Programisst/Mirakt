@@ -1,18 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
 
-  auth: { autoRefreshToken: false, persistSession: false },
-});
-
 async function getUser(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return null;
-  const { data: { user } } = await anon.auth.getUser(token);
+  const { data: { user } } = await getAnonClient().auth.getUser(token);
   return user ?? null;
 }
 
 async function verifyParticipant(convId: string, userId: string) {
-  const { data } = await admin.from("conversations")
+  const { data } = await getAdminClient().from("conversations")
     .select("user1_id, user2_id").eq("id", convId).single();
   if (!data) return false;
   return data.user1_id === userId || data.user2_id === userId;
@@ -29,7 +26,7 @@ export async function GET(req: NextRequest) {
   if (!(await verifyParticipant(convId, user.id)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { data: msgs } = await admin
+  const { data: msgs } = await getAdminClient()
     .from("messages")
     .select("id, conversation_id, sender_id, content, image_url, created_at")
     .eq("conversation_id", convId)
@@ -37,7 +34,7 @@ export async function GET(req: NextRequest) {
     .limit(100);
 
   const senderIds = [...new Set(msgs?.map(m => m.sender_id) ?? [])];
-  const { data: profiles } = await admin.from("profiles")
+  const { data: profiles } = await getAdminClient().from("profiles")
     .select("id, username, avatar_url")
     .in("id", senderIds.length > 0 ? senderIds : ["00000000-0000-0000-0000-000000000000"]);
   const pm = new Map(profiles?.map(p => [p.id, p]) ?? []);
@@ -56,7 +53,7 @@ export async function POST(req: NextRequest) {
   if (!(await verifyParticipant(conversation_id, user.id)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { data: msg, error } = await admin.from("messages")
+  const { data: msg, error } = await getAdminClient().from("messages")
     .insert({ conversation_id, sender_id: user.id, content: content ?? null, image_url: image_url ?? null })
     .select("id, conversation_id, sender_id, content, image_url, created_at")
     .single();

@@ -7,14 +7,7 @@ export async function POST(req: NextRequest) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY)
     return NextResponse.json({ error: "Service role key not configured" }, { status: 500 });
 
-  const userClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth: { autoRefreshToken: false, persistSession: false },
-    },
-  );
+  const userClient = getAnonClient(); // token-based auth via header
   const { data: { user } } = await userClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -25,27 +18,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Только изображения" }, { status: 400 });
   if (file.size > 5 * 1024 * 1024)
     return NextResponse.json({ error: "Максимум 5 МБ" }, { status: 400 });
-
-  const admin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } },
-  );
-
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
   const path = `avatars/${user.id}-${Date.now()}.${ext}`;
   const buffer = await file.arrayBuffer();
 
-  const { data, error } = await admin.storage
+  const { data, error } = await getAdminClient().storage
     .from("news-images")
     .upload(path, buffer, { contentType: file.type, upsert: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const { data: { publicUrl } } = admin.storage
+  const { data: { publicUrl } } = getAdminClient().storage
     .from("news-images")
     .getPublicUrl(data.path);
 
-  const { error: pErr } = await admin
+  const { error: pErr } = await getAdminClient()
     .from("profiles")
     .upsert(
       { id: user.id, avatar_url: publicUrl, updated_at: new Date().toISOString() },

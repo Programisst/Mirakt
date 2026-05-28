@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
 
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
-
 async function getUser(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return null;
-  const { data: { user } } = await anon.auth.getUser(token);
+  const { data: { user } } = await getAnonClient().auth.getUser(token);
   return user ?? null;
 }
 
@@ -21,7 +13,7 @@ export async function GET(req: NextRequest) {
   const user = await getUser(req);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: rows } = await admin
+  const { data: rows } = await getAdminClient()
     .from("friendships")
     .select("id, sender_id, receiver_id, status, created_at")
     .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
@@ -32,7 +24,7 @@ export async function GET(req: NextRequest) {
   }
 
   const ids = [...new Set(rows.flatMap(r => [r.sender_id, r.receiver_id]).filter(id => id !== user.id))];
-  const { data: profiles } = await admin
+  const { data: profiles } = await getAdminClient()
     .from("profiles")
     .select("id, username, avatar_url, verified")
     .in("id", ids.length > 0 ? ids : ["00000000-0000-0000-0000-000000000000"]);
@@ -65,12 +57,12 @@ export async function POST(req: NextRequest) {
   const { target_username } = await req.json();
   if (!target_username) return NextResponse.json({ error: "target_username required" }, { status: 400 });
 
-  const { data: target } = await admin
+  const { data: target } = await getAdminClient()
     .from("profiles").select("id").eq("username", target_username).single();
   if (!target) return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
   if (target.id === user.id) return NextResponse.json({ error: "Нельзя добавить себя" }, { status: 400 });
 
-  const { data: existing } = await admin
+  const { data: existing } = await getAdminClient()
     .from("friendships")
     .select("id")
     .or(`and(sender_id.eq.${user.id},receiver_id.eq.${target.id}),and(sender_id.eq.${target.id},receiver_id.eq.${user.id})`)
@@ -78,7 +70,7 @@ export async function POST(req: NextRequest) {
 
   if (existing) return NextResponse.json({ error: "Заявка уже существует" }, { status: 409 });
 
-  const { data, error } = await admin
+  const { data, error } = await getAdminClient()
     .from("friendships")
     .insert({ sender_id: user.id, receiver_id: target.id, status: "pending" })
     .select("id").single();

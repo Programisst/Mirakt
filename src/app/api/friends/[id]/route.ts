@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
 
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
-
 async function getUser(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return null;
-  const { data: { user } } = await anon.auth.getUser(token);
+  const { data: { user } } = await getAnonClient().auth.getUser(token);
   return user ?? null;
 }
 
@@ -27,15 +19,15 @@ export async function PATCH(
   const { id } = await params;
   const { action } = await req.json(); // 'accept' | 'reject'
 
-  const { data: row } = await admin
+  const { data: row } = await getAdminClient()
     .from("friendships").select("receiver_id").eq("id", id).single();
   if (!row) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
   if (row.receiver_id !== user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   if (action === "reject") {
-    await admin.from("friendships").delete().eq("id", id);
+    await getAdminClient().from("friendships").delete().eq("id", id);
   } else {
-    await admin.from("friendships").update({ status: "accepted" }).eq("id", id);
+    await getAdminClient().from("friendships").update({ status: "accepted" }).eq("id", id);
   }
 
   return NextResponse.json({ ok: true });
@@ -51,13 +43,13 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const { data: row } = await admin
+  const { data: row } = await getAdminClient()
     .from("friendships").select("sender_id, receiver_id").eq("id", id).single();
   if (!row) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
   if (row.sender_id !== user.id && row.receiver_id !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  await admin.from("friendships").delete().eq("id", id);
+  await getAdminClient().from("friendships").delete().eq("id", id);
   return NextResponse.json({ ok: true });
 }
