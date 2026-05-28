@@ -1,7 +1,12 @@
 import { Redis } from "@upstash/redis";
 import { NextRequest, NextResponse } from "next/server";
 
-const redis = Redis.fromEnv();
+function getRedis() {
+  return new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL ?? "",
+    token: process.env.UPSTASH_REDIS_REST_TOKEN ?? "",
+  });
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,6 +28,7 @@ export async function POST(req: NextRequest) {
     const now = Date.now();
     const visit = { ip, page, referrer, country, city, ua: ua || "", timestamp: now };
 
+    const redis = getRedis();
     await Promise.all([
       redis.zadd("visits", { score: now, member: JSON.stringify(visit) }),
       redis.zadd("online", { score: now, member: ip }),

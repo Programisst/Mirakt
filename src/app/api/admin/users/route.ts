@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
 
 function checkAuth(req: NextRequest) {
   return req.headers.get("x-admin-auth") === process.env.ADMIN_PASSWORD;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
 import { Redis } from "@upstash/redis";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
