@@ -569,8 +569,9 @@ function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Aut
   const [showCf, setShowCf]     = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
+  const [agreed, setAgreed]     = useState(false);
 
-  function reset(m: AuthMode) { setMode(m); setError(""); setPassword(""); setConfirm(""); }
+  function reset(m: AuthMode) { setMode(m); setError(""); setPassword(""); setConfirm(""); setAgreed(false); }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -748,9 +749,20 @@ function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Aut
               </div>
             )}
 
-            <button type="submit" disabled={loading}
-              className="w-full h-11 rounded-xl text-[11px] font-black tracking-[0.18em] transition-all disabled:opacity-40"
-              style={{ background: loading ? "rgba(212,175,55,0.12)" : GOLD, color: loading ? GOLD : "#080600", border: `1px solid ${GOLD}` }}>
+            {mode === "register" && (
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "10px 12px", borderRadius: 8, background: agreed ? "rgba(212,175,55,0.05)" : "rgba(255,255,255,0.02)", border: `1px solid ${agreed ? "rgba(212,175,55,0.2)" : "rgba(255,255,255,0.07)"}`, transition: "all 200ms", marginBottom: 2 }}>
+                <div onClick={() => setAgreed(v => !v)} style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${agreed ? "rgba(212,175,55,0.8)" : "rgba(255,255,255,0.2)"}`, background: agreed ? "rgba(212,175,55,0.15)" : "transparent", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 200ms" }}>
+                  {agreed && <svg width="9" height="9" viewBox="0 0 9 9" fill="none"><path d="M1 4.5L3.5 7L8 2" stroke="rgba(212,175,55,0.9)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </div>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>
+                  Соглашаюсь с <a href="/terms" target="_blank" style={{ color: "rgba(212,175,55,0.7)", textDecoration: "underline" }}>условиями</a> и <a href="/konfidencialnost" target="_blank" style={{ color: "rgba(212,175,55,0.7)", textDecoration: "underline" }}>политикой конфиденциальности</a>
+                </span>
+              </label>
+            )}
+
+            <button type="submit" disabled={loading || (mode === "register" && !agreed)}
+              className="w-full h-11 rounded-xl text-[11px] font-black tracking-[0.18em] transition-all"
+              style={{ background: (mode === "register" && !agreed) ? "rgba(255,255,255,0.04)" : loading ? "rgba(212,175,55,0.12)" : GOLD, color: (mode === "register" && !agreed) ? "rgba(255,255,255,0.2)" : loading ? GOLD : "#080600", border: `1px solid ${(mode === "register" && !agreed) ? "rgba(255,255,255,0.08)" : GOLD}`, cursor: (mode === "register" && !agreed) ? "not-allowed" : "pointer" }}>
               {loading ? "…" : mode === "login" ? "ВОЙТИ →" : "ЗАРЕГИСТРИРОВАТЬСЯ →"}
             </button>
           </form>
