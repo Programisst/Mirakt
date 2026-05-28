@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --color-omni-gold: #d4af37;
+  --color-omni-gold-soft: rgba(212, 175, 55, 0.28);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s ease-out both;
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+body {
+  background: #030303;
+  color: #fafafa;
+}
+
+/* Скрываем браузерный встроенный глазок у полей пароля */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+input[type="password"]::-webkit-contacts-auto-fill-button,
+input[type="password"]::-webkit-credentials-auto-fill-button {
+  display: none !important;
+}
+
+@layer utilities {
+  .glass-panel {
+    background: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0.03) 100%
+    );
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+
+  .glass-header {
+    background: rgba(4, 4, 6, 0.82);
+    border-bottom: 1px solid rgba(212, 175, 55, 0.08);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    box-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-marquee-ticker {
+    animation: marquee 40s linear infinite;
+  }
+
+  .animate-marquee-ticker-slow {
+    animation: marquee 52s linear infinite;
+  }
+
+  /* Прелоадер: стабильный слой отрисовки, без лишнего размытия */
+  .high-quality {
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+}
+
+@keyframes preloaderBar {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes preloaderGlow {
+  from { opacity: 0.6; transform: translate(-50%, -62%) scale(0.92); }
+  to   { opacity: 1;   transform: translate(-50%, -62%) scale(1.08); }
+}

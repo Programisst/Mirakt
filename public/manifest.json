@@ -1,0 +1,24 @@
+{
+  "name": "Mirakt — новостной портал",
+  "short_name": "Mirakt",
+  "description": "Актуальные новости России, Крыма, экономики и политики",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08070a",
+  "theme_color": "#08070a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/mirakt-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/mirakt-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

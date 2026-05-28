@@ -1,0 +1,28 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+
+async function getUser(req: NextRequest) {
+  const token = req.headers.get("authorization")?.replace("Bearer ", "");
+  if (!token) return null;
+  const { data: { user } } = await anon.auth.getUser(token);
+  return user ?? null;
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const user = await getUser(req);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { data } = await admin.from("conversations").select("user1_id, user2_id").eq("id", id).single();
+  if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (data.user1_id !== user.id && data.user2_id !== user.id)
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  await admin.from("conversations").delete().eq("id", id);
+  return NextResponse.json({ ok: true });
+}
