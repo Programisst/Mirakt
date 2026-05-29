@@ -10,11 +10,12 @@ export interface NewsItem {
   editorial?: boolean;
 }
 
-export interface CryptoPrices {
-  btc: number;
-  eth: number;
-  sol: number;
-  xrp: number;
+export interface CurrencyRates {
+  usd: number | null;
+  eur: number | null;
+  cny: number | null;
+  try: number | null;
+  aed: number | null;
 }
 
 export interface AuthUser {

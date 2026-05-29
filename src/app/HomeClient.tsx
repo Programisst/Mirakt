@@ -10,8 +10,9 @@ import { CATEGORIES, type CategoryId } from "@/constants/categories";
 import { isCleanNewsText } from "@/lib/content-filter";
 import { isValidNewsImage } from "@/lib/thumbnail";
 import { GOLD, LOGO_SRC } from "@/constants/site";
-import type { AuthUser, CryptoPrices, NewsItem } from "@/types/news";
+import type { AuthUser, CurrencyRates, NewsItem } from "@/types/news";
 import { supabase } from "@/lib/supabase";
+import { useLocale } from "@/lib/locale-context";
 
 const PAGE_SIZE       = 10;
 const CACHE_TTL_MS    = 3 * 60 * 1000;
@@ -514,6 +515,7 @@ function SkeletonCard({ featured }: { featured?: boolean }) {
 
 // ─────────────────────────────── UI: LoadMore ────────────────────────────────
 function LoadMoreButton({ onClick, busy }: { onClick: () => void; busy: boolean }) {
+  const { t } = useLocale();
   return (
     <div className="flex justify-center mt-12 mb-4">
       <button
@@ -542,9 +544,9 @@ function LoadMoreButton({ onClick, busy }: { onClick: () => void; busy: boolean 
         {busy ? (
           <span className="flex items-center gap-2.5">
             <span className="w-3 h-3 rounded-full border-[1.5px] border-transparent animate-spin" style={{ borderTopColor: GOLD }} />
-            ЗАГРУЗКА…
+            {t.loading}
           </span>
-        ) : "ЗАГРУЗИТЬ ЕЩЁ"}
+        ) : t.load_more}
       </button>
     </div>
   );
@@ -560,6 +562,7 @@ const fieldStyle = {
 };
 
 function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: AuthUser) => void }) {
+  const { t } = useLocale();
   const [mode, setMode]         = useState<AuthMode>("login");
   const [done, setDone]         = useState(false);
   const [email, setEmail]       = useState("");
@@ -578,7 +581,7 @@ function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Aut
     setError("");
     if (mode === "register") {
       if (password.length < 6) { setError("Пароль минимум 6 символов"); return; }
-      if (password !== confirm) { setError("Пароли не совпадают"); return; }
+      if (password !== confirm) { setError(t.cab_pw_mismatch); return; }
     }
     setLoading(true);
     try {
@@ -638,36 +641,34 @@ function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Aut
                 <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <h2 className="text-white text-[18px] font-bold mb-2">Проверьте почту</h2>
+            <h2 className="text-white text-[18px] font-bold mb-2">{t.auth_check_email}</h2>
             <p className="text-[13px] leading-relaxed mb-6" style={{ color: "rgba(255,255,255,0.38)" }}>
-              Мы отправили письмо на<br />
-              <span style={{ color: GOLD }}>{email}</span><br />
-              Подтвердите email, затем войдите.
+              <span style={{ color: GOLD }}>{email}</span>
             </p>
             <button onClick={() => { setDone(false); reset("login"); }}
               className="w-full h-11 rounded-xl text-[11px] font-black tracking-[0.18em]"
               style={{ background: "rgba(212,175,55,0.1)", border: `1px solid ${GOLD}`, color: GOLD }}>
-              ВОЙТИ
+              {t.auth_sign_in.replace(" →", "").toUpperCase()}
             </button>
           </div>
         ) : (
           /* ── Форма ── */
           <form onSubmit={handleSubmit}>
             <h2 className="text-white text-[20px] font-bold mb-2">
-              {mode === "login" ? "Вход" : "Регистрация"}
+              {mode === "login" ? t.auth_login : t.auth_register}
             </h2>
             <p className="text-[13px] mb-6" style={{ color: "rgba(255,255,255,0.38)" }}>
               {mode === "login" ? (
-                <>Нет аккаунта?{" "}
+                <>{t.auth_no_account}{" "}
                   <button type="button" onClick={() => reset("register")}
                     className="underline underline-offset-[3px] hover:opacity-80" style={{ color: GOLD, fontWeight: 600 }}>
-                    Зарегистрироваться
+                    {t.auth_sign_up.replace(" →", "")}
                   </button></>
               ) : (
-                <>Уже есть аккаунт?{" "}
+                <>{t.auth_has_account}{" "}
                   <button type="button" onClick={() => reset("login")}
                     className="underline underline-offset-[3px] hover:opacity-80" style={{ color: GOLD, fontWeight: 600 }}>
-                    Войти
+                    {t.auth_sign_in.replace(" →", "")}
                   </button></>
               )}
             </p>
@@ -675,7 +676,7 @@ function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Aut
             <div className="flex flex-col gap-3 mb-4">
               {/* Email */}
               <div>
-                <label className="block text-[10px] tracking-[0.22em] mb-1.5" style={{ color: "rgba(212,175,55,0.55)" }}>EMAIL</label>
+                <label className="block text-[10px] tracking-[0.22em] mb-1.5" style={{ color: "rgba(212,175,55,0.55)" }}>{t.auth_email}</label>
                 <input type="email" value={email} required autoFocus autoComplete="email"
                   placeholder="name@example.com"
                   onChange={(e) => { setEmail(e.target.value); setError(""); }}
@@ -687,10 +688,10 @@ function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Aut
 
               {/* Пароль */}
               <div>
-                <label className="block text-[10px] tracking-[0.22em] mb-1.5" style={{ color: "rgba(212,175,55,0.55)" }}>ПАРОЛЬ</label>
+                <label className="block text-[10px] tracking-[0.22em] mb-1.5" style={{ color: "rgba(212,175,55,0.55)" }}>{t.auth_password}</label>
                 <div className="relative">
                   <input type={showPw ? "text" : "password"} value={password} required autoComplete={mode === "login" ? "current-password" : "new-password"}
-                    placeholder={mode === "register" ? "Минимум 6 символов" : "••••••••"}
+                    placeholder={mode === "register" ? t.cab_min_chars : "••••••••"}
                     onChange={(e) => { setPassword(e.target.value); setError(""); }}
                     className="w-full h-11 rounded-xl px-4 pr-11 text-[14px] text-white placeholder-white/20 outline-none"
                     style={fieldStyle}
@@ -715,10 +716,10 @@ function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Aut
               {/* Подтверждение (только для регистрации) */}
               {mode === "register" && (
                 <div>
-                  <label className="block text-[10px] tracking-[0.22em] mb-1.5" style={{ color: "rgba(212,175,55,0.55)" }}>ПОДТВЕРЖДЕНИЕ ПАРОЛЯ</label>
+                  <label className="block text-[10px] tracking-[0.22em] mb-1.5" style={{ color: "rgba(212,175,55,0.55)" }}>{t.auth_confirm}</label>
                   <div className="relative">
                     <input type={showCf ? "text" : "password"} value={confirm} required autoComplete="new-password"
-                      placeholder="Повторите пароль"
+                      placeholder={t.auth_repeat_password}
                       onChange={(e) => { setConfirm(e.target.value); setError(""); }}
                       className="w-full h-11 rounded-xl px-4 pr-11 text-[14px] text-white placeholder-white/20 outline-none"
                       style={{ ...fieldStyle, borderColor: confirm && confirm !== password ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.1)" }}
@@ -755,7 +756,10 @@ function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Aut
                   {agreed && <svg width="9" height="9" viewBox="0 0 9 9" fill="none"><path d="M1 4.5L3.5 7L8 2" stroke="rgba(212,175,55,0.9)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                 </div>
                 <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>
-                  Соглашаюсь с <a href="/terms" target="_blank" style={{ color: "rgba(212,175,55,0.7)", textDecoration: "underline" }}>условиями</a> и <a href="/konfidencialnost" target="_blank" style={{ color: "rgba(212,175,55,0.7)", textDecoration: "underline" }}>политикой конфиденциальности</a>
+                  {t.auth_agree}{" "}
+                  <a href="/terms" target="_blank" style={{ color: "rgba(212,175,55,0.7)", textDecoration: "underline" }}>{t.auth_terms}</a>
+                  {" "}{t.auth_and}{" "}
+                  <a href="/konfidencialnost" target="_blank" style={{ color: "rgba(212,175,55,0.7)", textDecoration: "underline" }}>{t.auth_privacy}</a>
                 </span>
               </label>
             )}
@@ -763,7 +767,7 @@ function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Aut
             <button type="submit" disabled={loading || (mode === "register" && !agreed)}
               className="w-full h-11 rounded-xl text-[11px] font-black tracking-[0.18em] transition-all"
               style={{ background: (mode === "register" && !agreed) ? "rgba(255,255,255,0.04)" : loading ? "rgba(212,175,55,0.12)" : GOLD, color: (mode === "register" && !agreed) ? "rgba(255,255,255,0.2)" : loading ? GOLD : "#080600", border: `1px solid ${(mode === "register" && !agreed) ? "rgba(255,255,255,0.08)" : GOLD}`, cursor: (mode === "register" && !agreed) ? "not-allowed" : "pointer" }}>
-              {loading ? "…" : mode === "login" ? "ВОЙТИ →" : "ЗАРЕГИСТРИРОВАТЬСЯ →"}
+              {loading ? "…" : mode === "login" ? t.auth_sign_in.toUpperCase() : t.auth_sign_up.toUpperCase()}
             </button>
           </form>
         )}
@@ -774,6 +778,7 @@ function AuthModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Aut
 
 // ─────────────────────────────── Page ────────────────────────────────────────
 export function HomeClient() {
+  const { locale, t } = useLocale();
   const [preloaderDone, setPreloaderDone] = useState(false);
   const [showAnalyticsLink, setShowAnalyticsLink] = useState(false);
   const [showAdminLink, setShowAdminLink] = useState(false);
@@ -814,7 +819,7 @@ export function HomeClient() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [poolLen, setPoolLen]           = useState(0);
   const [query, setQuery]           = useState("");
-  const [prices, setPrices]         = useState<CryptoPrices | null>(null);
+  const [prices, setPrices]         = useState<CurrencyRates | null>(null);
   const [freshCount, setFreshCount] = useState(0);
 
   // ── Auth state ─────────────────────────────────────────────────────────────
@@ -893,18 +898,18 @@ export function HomeClient() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // ── Crypto prices ──────────────────────────────────────────────────────────
+  // ── Currency rates (ЦБ РФ) ────────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch("/api/crypto");
+        const res = await fetch("/api/currency");
         if (!res.ok) return;
         const d = await res.json();
-        setPrices({ btc: d.bitcoin?.usd ?? 0, eth: d.ethereum?.usd ?? 0, sol: d.solana?.usd ?? 0, xrp: d.ripple?.usd ?? 0 });
+        setPrices({ usd: d.usd, eur: d.eur, cny: d.cny, try: d.try, aed: d.aed });
       } catch { /* silent */ }
     };
     load();
-    const id = setInterval(load, 60_000);
+    const id = setInterval(load, 3_600_000); // раз в час
     return () => clearInterval(id);
   }, []);
 
@@ -1018,7 +1023,7 @@ export function HomeClient() {
       )
     : news;
 
-  const catLabel = CATEGORIES.find((c) => c.id === activeCategory)?.label ?? "";
+  const catLabel = t[`cat_${activeCategory}` as keyof typeof t] as string;
 
   return (
     <>
@@ -1039,7 +1044,7 @@ export function HomeClient() {
             boxShadow:     "0 4px 24px rgba(212,175,55,0.25)",
           }}
         >
-          ↑ {freshCount} новых {freshCount === 1 ? "материал" : freshCount < 5 ? "материала" : "материалов"}
+          {t.new_articles(freshCount)}
         </button>
       )}
 
@@ -1072,11 +1077,11 @@ export function HomeClient() {
             <div className="mb-7">
               <div className="flex items-center gap-2 mb-4">
                 <span className="w-4 h-px" style={{ background: "rgba(212,175,55,0.5)" }} />
-                <span className="text-[9px] font-black tracking-[0.35em] text-white/30">ОТ РЕДАКЦИИ</span>
+                <span className="text-[9px] font-black tracking-[0.35em] text-white/30">{t.from_editors}</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
                 {pinnedNews.map((item) => {
-                  const catName = CATEGORIES.find((c) => c.id === item.category)?.label ?? item.category;
+                  const catName = t[`cat_${item.category}` as keyof typeof t] as string ?? item.category.toUpperCase();
                   const newsItem: NewsItem = {
                     id: `editorial-${item.id}`,
                     title: item.title,
@@ -1109,7 +1114,7 @@ export function HomeClient() {
           {!loading && fetchError && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center py-36 gap-5">
               <span className="text-5xl" style={{ color: "rgba(212,175,55,0.18)" }}>◈</span>
-              <p className="text-[10px] tracking-[0.3em] text-white/18">НЕТ ДАННЫХ — КАНАЛ НЕДОСТУПЕН</p>
+              <p className="text-[10px] tracking-[0.3em] text-white/18">{t.no_data}</p>
               <button
                 onClick={() => { categoryCache.delete(activeCategory); loadCat(activeCategory); }}
                 className="px-6 py-2 rounded-full text-[10px] tracking-[0.2em] transition-colors"
@@ -1117,7 +1122,7 @@ export function HomeClient() {
                 onMouseEnter={(e) => ((e.target as HTMLElement).style.color = GOLD)}
                 onMouseLeave={(e) => ((e.target as HTMLElement).style.color = "rgba(212,175,55,0.55)")}
               >
-                ПОВТОРИТЬ
+                {t.retry}
               </button>
             </div>
           )}
@@ -1125,7 +1130,7 @@ export function HomeClient() {
           {!loading && !fetchError && filtered.length === 0 && news.length > 0 && (
             <div className="flex flex-col items-center justify-center py-24 text-white/15">
               <span className="text-4xl mb-4">◈</span>
-              <p className="text-[10px] tracking-[0.3em]">НИЧЕГО НЕ НАЙДЕНО</p>
+              <p className="text-[10px] tracking-[0.3em]">{t.not_found}</p>
             </div>
           )}
 
@@ -1190,7 +1195,7 @@ export function HomeClient() {
 
           {!loading && !hasMore && news.length > 0 && !query.trim() && (
             <p className="text-center py-10 text-[9px] tracking-[0.38em] text-white/10">
-              ◆ &nbsp;КОНЕЦ ЛЕНТЫ&nbsp; ◆
+              ◆ {t.end_of_feed} ◆
             </p>
           )}
         </main>
@@ -1204,10 +1209,10 @@ export function HomeClient() {
               <span className="text-[11px] tracking-[0.18em]" style={{ color: GOLD, fontWeight: 700 }}>Mirakt</span>
             </a>
             <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-[10px] tracking-widest text-white/18">
-              <Link href="/o-nas"            className="hover:text-white/50 transition-colors">О НАС</Link>
-              <Link href="/kontakty"         className="hover:text-white/50 transition-colors">КОНТАКТЫ</Link>
-              <Link href="/konfidencialnost" className="hover:text-white/50 transition-colors">КОНФИДЕНЦИАЛЬНОСТЬ</Link>
-              <Link href="/terms"            className="hover:text-white/50 transition-colors">УСЛОВИЯ ИСПОЛЬЗОВАНИЯ</Link>
+              <Link href="/o-nas"            className="hover:text-white/50 transition-colors">{t.about}</Link>
+              <Link href="/kontakty"         className="hover:text-white/50 transition-colors">{t.contacts}</Link>
+              <Link href="/konfidencialnost" className="hover:text-white/50 transition-colors">{t.privacy}</Link>
+              <Link href="/terms"            className="hover:text-white/50 transition-colors">{t.terms}</Link>
 {showAdminLink && (
                 <Link href="/admin" className="hover:text-white/50 transition-colors">АДМИНКА</Link>
               )}

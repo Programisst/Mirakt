@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
 import { Tracker } from "@/components/Tracker";
-import { PresenceTracker } from "@/components/PresenceTracker";
+import { LocaleProvider } from "@/lib/locale-context";
 
 const BASE_URL = "https://mirakt.ru";
 
@@ -91,9 +91,10 @@ export default function RootLayout({
         <Script id="plausible-init" strategy="afterInteractive">{`window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()`}</Script>
       </head>
       <body className="min-h-screen font-sans antialiased">
-        <Tracker />
-        <PresenceTracker />
-        {children}
+        <LocaleProvider>
+          <Tracker />
+          {children}
+        </LocaleProvider>
       </body>
     </html>
   );
