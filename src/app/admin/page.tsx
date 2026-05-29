@@ -113,6 +113,19 @@ const COUNTRY: Record<string, string> = {
 };
 const cName = (c: string) => COUNTRY[c] || c || "—";
 
+const SOURCE_LABELS: Record<string, string> = {
+  "direct":        "Прямой заход",
+  "yandex":        "Яндекс",
+  "google":        "Google",
+  "telegram":      "Telegram",
+  "vkontakte":     "ВКонтакте",
+  "odnoklassniki": "Одноклассники",
+};
+function srcLabel(s: string): string {
+  return SOURCE_LABELS[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : "Прямой заход");
+}
+
+
 const PERIODS = [
   { label: "1ч",  ms: 3_600_000 },
   { label: "24ч", ms: 86_400_000 },
@@ -223,7 +236,8 @@ function AnalyticsTab() {
   }, [users, userQuery]);
 
   async function handleClear() {
-    if (!confirm("Очистить все данные аналитики?")) return;
+    if (!confirm("Удалить все данные аналитики?")) return;
+    if (!confirm("Вы уверены? Это действие нельзя отменить!")) return;
     setClearing(true);
     await fetch("/api/analytics", { method: "DELETE", headers: { "x-admin-auth": getToken() } });
     await load();
@@ -263,11 +277,21 @@ function AnalyticsTab() {
       const src = (v as Visit & { source?: string }).source || "direct";
       sourceCount[src] = (sourceCount[src] || 0) + 1;
     });
+    const durations = unique.map(v => (v as Visit & { duration?: number }).duration).filter((d): d is number => !!d && d > 0);
+    const avgDuration = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+    function fmtDuration(s: number) {
+      if (s < 60) return `${s}с`;
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      return sec > 0 ? `${m}м ${sec}с` : `${m}м`;
+    }
     return {
       uniqueIPs: unique.length,
       topPages: Object.entries(pageCount).sort((a, b) => b[1] - a[1]).slice(0, 7),
       topCountries: Object.entries(countryCount).sort((a, b) => b[1] - a[1]).slice(0, 8),
-      topSources: Object.entries(sourceCount).sort((a, b) => b[1] - a[1]).slice(0, 8),
+      topSources: Object.entries(sourceCount).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([s, n]) => [srcLabel(s), n] as [string, number]),
+      avgDuration,
+      fmtDuration,
       recent: unique,
     };
   }, [filtered]);
@@ -299,9 +323,10 @@ function AnalyticsTab() {
       </div>
 
       {/* Карточки */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <StatCard label="Онлайн сейчас" value={raw?.onlineNow ?? 0} sub="за последние 5 мин" />
         <StatCard label="Посетителей" value={stats.uniqueIPs} sub={`за ${PERIODS[period].label}`} />
+        <StatCard label="Среднее время" value={stats.avgDuration > 0 ? stats.fmtDuration(stats.avgDuration) : "—"} sub="на сайте" />
       </div>
 
       {/* Карточки: источники */}
@@ -323,21 +348,15 @@ function AnalyticsTab() {
       {/* Визиты */}
       <div className="rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(212,175,55,0.1)" }}>
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-          <div className="text-[11px] tracking-widest uppercase" style={{ color: GOLD_DIM }}>
-            Последние визиты
+          <div className="flex items-center gap-2">
+            <div className="text-[11px] tracking-widest uppercase" style={{ color: GOLD_DIM }}>Последние визиты</div>
+            <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.18)" }}>· обновляется автоматически</span>
           </div>
-          <div className="flex gap-2">
-            <button onClick={load}
-              className="text-[10px] tracking-widest uppercase px-3 py-1 rounded-full hover:opacity-70"
-              style={{ border: "1px solid rgba(212,175,55,0.2)", color: GOLD_DIM }}>
-              Обновить
-            </button>
-            <button onClick={handleClear} disabled={clearing}
-              className="text-[10px] tracking-widest uppercase px-3 py-1 rounded-full hover:opacity-70 disabled:opacity-30"
-              style={{ border: "1px solid rgba(239,68,68,0.2)", color: "rgba(239,68,68,0.5)" }}>
-              {clearing ? "..." : "Очистить"}
-            </button>
-          </div>
+          <button onClick={handleClear} disabled={clearing}
+            className="text-[10px] tracking-widest uppercase px-2 py-0.5 rounded-full hover:opacity-50 disabled:opacity-30"
+            style={{ border: "1px solid rgba(239,68,68,0.15)", color: "rgba(239,68,68,0.3)" }}>
+            {clearing ? "..." : "Сбросить данные"}
+          </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]">
@@ -358,7 +377,7 @@ function AnalyticsTab() {
                   <td className="py-2 pr-4" style={{ color: "rgba(255,255,255,0.5)" }}>{cName(v.country)}</td>
                   <td className="py-2 pr-4" style={{ color: "rgba(255,255,255,0.5)" }}>{v.city || "—"}</td>
                   <td className="py-2 pr-4" style={{ color: "rgba(255,255,255,0.4)" }}>{getBrowser(v.ua)}</td>
-                  <td className="py-2 pr-4" style={{ color: "rgba(212,175,55,0.55)", fontSize: 11 }}>{v.source || "direct"}</td>
+                  <td className="py-2 pr-4" style={{ color: "rgba(212,175,55,0.55)", fontSize: 11 }}>{srcLabel(v.source || "direct")}</td>
                   <td className="py-2 text-right whitespace-nowrap" style={{ color: "rgba(255,255,255,0.25)" }}>{timeAgo(v.timestamp)} назад</td>
                 </tr>
               ))}
