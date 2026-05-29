@@ -76,7 +76,7 @@ export default function RootLayout({
       <head>
         <link rel="manifest" href="/manifest.json" />
         <link rel="alternate" type="application/rss+xml" title="Mirakt RSS" href="/rss.xml" />
-        <link rel="apple-touch-icon" href="/mirakt-icon.png" />
+        <link rel="apple-touch-icon" href="/image copy.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Mirakt" />
