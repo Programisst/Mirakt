@@ -175,7 +175,7 @@ function AnalyticsTab() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/analytics", { headers: { "x-analytics-auth": getToken() } });
+      const res = await fetch("/api/analytics", { headers: { "x-admin-auth": getToken() } });
       if (res.ok) setRaw(await res.json());
     } finally { setLoading(false); }
   }, []);
@@ -225,7 +225,7 @@ function AnalyticsTab() {
   async function handleClear() {
     if (!confirm("Очистить все данные аналитики?")) return;
     setClearing(true);
-    await fetch("/api/analytics", { method: "DELETE", headers: { "x-analytics-auth": getToken() } });
+    await fetch("/api/analytics", { method: "DELETE", headers: { "x-admin-auth": getToken() } });
     await load();
     setClearing(false);
   }

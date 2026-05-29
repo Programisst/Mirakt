@@ -13,11 +13,10 @@ export async function GET(req: NextRequest) {
   const token = getToken(req);
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const sb = getUserClient(token);
-  const { data: { user } } = await sb.auth.getUser();
+  const { data: { user } } = await getAnonClient().auth.getUser(token);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: profile } = await sb
+  const { data: profile } = await getAdminClient()
     .from("profiles")
     .select("username, avatar_url, verified, email_verified")
     .eq("id", user.id)
@@ -38,8 +37,7 @@ export async function PATCH(req: NextRequest) {
   const token = getToken(req);
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const sb = getUserClient(token);
-  const { data: { user } } = await sb.auth.getUser();
+  const { data: { user } } = await getAnonClient().auth.getUser(token);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
@@ -65,7 +63,7 @@ export async function PATCH(req: NextRequest) {
     patch.avatar_url = body.avatar_url || null;
   }
 
-  const { error } = await sb.from("profiles").upsert(patch, { onConflict: "id" });
+  const { error } = await getAdminClient().from("profiles").upsert(patch, { onConflict: "id" });
   if (error) {
     if (error.code === "23505")
       return NextResponse.json({ error: "Ник уже занят" }, { status: 409 });
