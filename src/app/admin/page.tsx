@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 
-const PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD ?? "";
-const LS_KEY   = "admin_access";
+const LS_KEY = "admin_token";
+
+function getToken() { return typeof window !== "undefined" ? localStorage.getItem(LS_KEY) ?? "" : ""; }
 const GOLD     = "rgba(212,175,55,0.85)";
 const GOLD_DIM = "rgba(212,175,55,0.4)";
 
@@ -174,7 +175,7 @@ function AnalyticsTab() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/analytics", { headers: { "x-analytics-auth": PASSWORD } });
+      const res = await fetch("/api/analytics", { headers: { "x-analytics-auth": getToken() } });
       if (res.ok) setRaw(await res.json());
     } finally { setLoading(false); }
   }, []);
@@ -182,7 +183,7 @@ function AnalyticsTab() {
   useEffect(() => { load(); const t = setInterval(load, 30_000); return () => clearInterval(t); }, [load]);
 
   const loadUsers = useCallback(async () => {
-    const res = await fetch("/api/admin/users", { headers: { "x-admin-auth": PASSWORD } });
+    const res = await fetch("/api/admin/users", { headers: { "x-admin-auth": getToken() } });
     const d = await res.json();
     if (Array.isArray(d)) setUsers(d);
     setUsersLoading(false);
@@ -194,7 +195,7 @@ function AnalyticsTab() {
     setBanningId(u.id);
     await fetch("/api/admin/users", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-admin-auth": PASSWORD },
+      headers: { "Content-Type": "application/json", "x-admin-auth": getToken() },
       body: JSON.stringify({ id: u.id, ban: !u.banned }),
     });
     await loadUsers();
@@ -205,7 +206,7 @@ function AnalyticsTab() {
     setVerifyingId(u.id);
     await fetch("/api/admin/users", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-admin-auth": PASSWORD },
+      headers: { "Content-Type": "application/json", "x-admin-auth": getToken() },
       body: JSON.stringify({ id: u.id, verify: !u.verified }),
     });
     await loadUsers();
@@ -224,7 +225,7 @@ function AnalyticsTab() {
   async function handleClear() {
     if (!confirm("Очистить все данные аналитики?")) return;
     setClearing(true);
-    await fetch("/api/analytics", { method: "DELETE", headers: { "x-analytics-auth": PASSWORD } });
+    await fetch("/api/analytics", { method: "DELETE", headers: { "x-analytics-auth": getToken() } });
     await load();
     setClearing(false);
   }
@@ -500,7 +501,7 @@ function ImageUploader({ value, onChange }: { value: string; onChange: (url: str
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/admin/upload", {
-        method: "POST", headers: { "x-admin-auth": PASSWORD }, body: fd,
+        method: "POST", headers: { "x-admin-auth": getToken() }, body: fd,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -563,7 +564,7 @@ function NewsTab() {
   const [errorMsg, setErrorMsg]     = useState("");
 
   const loadNews = useCallback(async () => {
-    const res = await fetch("/api/admin/news", { headers: { "x-admin-auth": PASSWORD } });
+    const res = await fetch("/api/admin/news", { headers: { "x-admin-auth": getToken() } });
     const data = await res.json();
     if (res.ok) setNews(data);
     else setErrorMsg(`Ошибка загрузки: ${data?.error ?? res.status}`);
@@ -590,7 +591,7 @@ function NewsTab() {
       const isEdit = !!editingId;
       const res = await fetch("/api/admin/news", {
         method: isEdit ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json", "x-admin-auth": PASSWORD },
+        headers: { "Content-Type": "application/json", "x-admin-auth": getToken() },
         body: JSON.stringify(isEdit ? { id: editingId, ...form } : form),
       });
       const data = await res.json();
@@ -608,7 +609,7 @@ function NewsTab() {
     setTogglingId(item.id);
     await fetch("/api/admin/news", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-admin-auth": PASSWORD },
+      headers: { "Content-Type": "application/json", "x-admin-auth": getToken() },
       body: JSON.stringify({ id: item.id, hidden: !item.hidden }),
     });
     await loadNews(); setTogglingId(null);
@@ -619,7 +620,7 @@ function NewsTab() {
     setDeletingId(id);
     await fetch("/api/admin/news", {
       method: "DELETE",
-      headers: { "Content-Type": "application/json", "x-admin-auth": PASSWORD },
+      headers: { "Content-Type": "application/json", "x-admin-auth": getToken() },
       body: JSON.stringify({ id }),
     });
     await loadNews(); setDeletingId(null);
@@ -834,13 +835,24 @@ export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
-    if (localStorage.getItem(LS_KEY) === "true") setAuthed(true);
+    if (localStorage.getItem(LS_KEY)) setAuthed(true);
   }, []);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (input === PASSWORD) { localStorage.setItem(LS_KEY, "true"); setAuthed(true); }
-    else { setError(true); setInput(""); }
+    const res = await fetch("/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: input }),
+    });
+    if (res.ok) {
+      const { token } = await res.json();
+      localStorage.setItem(LS_KEY, token);
+      setAuthed(true);
+    } else {
+      setError(true);
+      setInput("");
+    }
   }
 
   if (authed) return <AdminDashboard />;

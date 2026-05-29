@@ -1,8 +1,9 @@
+import { checkAdminAuth } from "@/lib/admin-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase-server";
 
 function checkAuth(req: NextRequest) {
-  return req.headers.get("x-admin-auth") === process.env.ADMIN_PASSWORD;
+  return checkAdminAuth(req);
 }
 
 export async function GET(req: NextRequest) {

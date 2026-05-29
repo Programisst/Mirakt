@@ -1,9 +1,10 @@
+import { checkAdminAuth } from "@/lib/admin-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getNews, addNews, deleteNews } from "@/lib/news-store";
 import { supabase } from "@/lib/supabase";
 
 function checkAuth(req: NextRequest): boolean {
-  return req.headers.get("x-admin-auth") === process.env.ADMIN_PASSWORD;
+  return checkAdminAuth(req);
 }
 
 const unauth = () => NextResponse.json({ error: "Unauthorized" }, { status: 401 });

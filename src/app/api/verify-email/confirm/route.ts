@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAnonClient, getAdminClient } from "@/lib/supabase-server";
-import { Redis } from "@upstash/redis";
-
-function getRedis() {
-  return new Redis({ url: process.env.UPSTASH_REDIS_REST_URL ?? "", token: process.env.UPSTASH_REDIS_REST_TOKEN ?? "" });
-}
+import { getAdminClient } from "@/lib/supabase-server";
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
@@ -12,11 +7,17 @@ export async function GET(req: NextRequest) {
 
   if (!token) return NextResponse.redirect(`${baseUrl}/cabinet?verified=error`);
 
-  const userId = await getRedis().get<string>(`verify_email:${token}`);
-  if (!userId) return NextResponse.redirect(`${baseUrl}/cabinet?verified=expired`);
+  const admin = getAdminClient();
+  const { data } = await admin
+    .from("email_verify_tokens")
+    .select("user_id")
+    .eq("token", token)
+    .single();
 
-  await getAdminClient().from("profiles").update({ email_verified: true }).eq("id", userId);
-  await getRedis().del(`verify_email:${token}`);
+  if (!data) return NextResponse.redirect(`${baseUrl}/cabinet?verified=expired`);
+
+  await admin.from("profiles").update({ email_verified: true }).eq("id", data.user_id);
+  await admin.from("email_verify_tokens").delete().eq("token", token);
 
   return NextResponse.redirect(`${baseUrl}/cabinet?verified=success`);
 }

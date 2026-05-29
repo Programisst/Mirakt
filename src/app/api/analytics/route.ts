@@ -1,38 +1,42 @@
-import { Redis } from "@upstash/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { checkAdminAuth } from "@/lib/admin-auth";
+import { getSupabase } from "@/lib/supabase";
 
-const PASSWORD = process.env.ADMIN_PASSWORD ?? "";
+export async function GET(req: NextRequest) {
+  if (!checkAdminAuth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-function getRedis() {
-  return new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL ?? "",
-    token: process.env.UPSTASH_REDIS_REST_TOKEN ?? "",
+  const supabase = getSupabase();
+  const since = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+  const { data: visits } = await supabase
+    .from("visits")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(2000);
+
+  const { count: onlineNow } = await supabase
+    .from("visits")
+    .select("*", { count: "exact", head: true })
+    .gte("created_at", since);
+
+  return NextResponse.json({
+    onlineNow: onlineNow ?? 0,
+    visits: (visits ?? []).map((v) => ({
+      ip: v.ip,
+      page: v.page,
+      referrer: v.referrer,
+      country: v.country,
+      city: v.city,
+      ua: v.ua,
+      timestamp: new Date(v.created_at).getTime(),
+    })),
+  }, {
+    headers: { "Cache-Control": "no-store" },
   });
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = req.headers.get("x-analytics-auth");
-  if (auth !== PASSWORD) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const redis = getRedis();
-  await Promise.all([redis.del("visits"), redis.del("online")]);
+  if (!checkAdminAuth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  await getSupabase().from("visits").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   return NextResponse.json({ ok: true });
-}
-
-export async function GET(req: NextRequest) {
-  const auth = req.headers.get("x-analytics-auth");
-  if (auth !== PASSWORD) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const redis = getRedis();
-  const now = Date.now();
-  const [rawVisits, onlineCount] = await Promise.all([
-    redis.zrange("visits", 0, -1),
-    redis.zcount("online", now - 5 * 60 * 1000, now),
-  ]);
-
-  const visits = (rawVisits as string[]).map((v) => {
-    try { return typeof v === "string" ? JSON.parse(v) : v; }
-    catch { return null; }
-  }).filter((v) => v && v.ip !== "unknown");
-
-  return NextResponse.json({ onlineNow: onlineCount, visits });
 }
