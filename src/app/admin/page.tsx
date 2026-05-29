@@ -32,7 +32,7 @@ type NewsItem = {
 
 type Visit = {
   ip: string; page: string; referrer: string;
-  country: string; city: string; ua: string; timestamp: number;
+  country: string; city: string; ua: string; timestamp: number; source?: string;
 };
 
 type AuthUserRecord = {
@@ -249,6 +249,7 @@ function AnalyticsTab() {
     const unique = [...byIP.values()].sort((a, b) => b.timestamp - a.timestamp);
     const pageIPs: Record<string, Set<string>> = {};
     const countryCount: Record<string, number> = {};
+    const sourceCount: Record<string, number> = {};
     filtered.forEach(v => {
       const label = pageLabel(v.page);
       if (!label) return;
@@ -257,11 +258,16 @@ function AnalyticsTab() {
     });
     const pageCount: Record<string, number> = {};
     for (const [label, ips] of Object.entries(pageIPs)) pageCount[label] = ips.size;
-    unique.forEach(v => { if (v.country) countryCount[v.country] = (countryCount[v.country] || 0) + 1; });
+    unique.forEach(v => {
+      if (v.country) countryCount[v.country] = (countryCount[v.country] || 0) + 1;
+      const src = (v as Visit & { source?: string }).source || "direct";
+      sourceCount[src] = (sourceCount[src] || 0) + 1;
+    });
     return {
       uniqueIPs: unique.length,
       topPages: Object.entries(pageCount).sort((a, b) => b[1] - a[1]).slice(0, 7),
       topCountries: Object.entries(countryCount).sort((a, b) => b[1] - a[1]).slice(0, 8),
+      topSources: Object.entries(sourceCount).sort((a, b) => b[1] - a[1]).slice(0, 8),
       recent: unique,
     };
   }, [filtered]);
@@ -298,11 +304,15 @@ function AnalyticsTab() {
         <StatCard label="Посетителей" value={stats.uniqueIPs} sub={`за ${PERIODS[period].label}`} />
       </div>
 
-      {/* Топ разделов + Страны */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      {/* Карточки: источники */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(212,175,55,0.1)" }}>
           <div className="text-[11px] tracking-widest uppercase mb-4" style={{ color: GOLD_DIM }}>Топ разделов</div>
           <BarList items={stats.topPages} max={stats.topPages[0]?.[1] || 1} />
+        </div>
+        <div className="rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(212,175,55,0.1)" }}>
+          <div className="text-[11px] tracking-widest uppercase mb-4" style={{ color: GOLD_DIM }}>Источники трафика</div>
+          <BarList items={stats.topSources} max={stats.topSources[0]?.[1] || 1} />
         </div>
         <div className="rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(212,175,55,0.1)" }}>
           <div className="text-[11px] tracking-widest uppercase mb-4" style={{ color: GOLD_DIM }}>Страны</div>
@@ -337,6 +347,7 @@ function AnalyticsTab() {
                 <th className="text-left pb-3 font-normal pr-4">Страна</th>
                 <th className="text-left pb-3 font-normal pr-4">Город</th>
                 <th className="text-left pb-3 font-normal pr-4">Браузер</th>
+                <th className="text-left pb-3 font-normal pr-4">Источник</th>
                 <th className="text-right pb-3 font-normal">Время</th>
               </tr>
             </thead>
@@ -347,6 +358,7 @@ function AnalyticsTab() {
                   <td className="py-2 pr-4" style={{ color: "rgba(255,255,255,0.5)" }}>{cName(v.country)}</td>
                   <td className="py-2 pr-4" style={{ color: "rgba(255,255,255,0.5)" }}>{v.city || "—"}</td>
                   <td className="py-2 pr-4" style={{ color: "rgba(255,255,255,0.4)" }}>{getBrowser(v.ua)}</td>
+                  <td className="py-2 pr-4" style={{ color: "rgba(212,175,55,0.55)", fontSize: 11 }}>{v.source || "direct"}</td>
                   <td className="py-2 text-right whitespace-nowrap" style={{ color: "rgba(255,255,255,0.25)" }}>{timeAgo(v.timestamp)} назад</td>
                 </tr>
               ))}

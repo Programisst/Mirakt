@@ -6,18 +6,12 @@ export async function GET(req: NextRequest) {
   if (!checkAdminAuth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const supabase = getSupabase();
-  const since = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const since5min = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
-  const { data: visits } = await supabase
-    .from("visits")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(2000);
-
-  const { count: onlineNow } = await supabase
-    .from("visits")
-    .select("*", { count: "exact", head: true })
-    .gte("created_at", since);
+  const [{ data: visits }, { count: onlineNow }] = await Promise.all([
+    supabase.from("visits").select("*").order("created_at", { ascending: false }).limit(2000),
+    supabase.from("visits").select("*", { count: "exact", head: true }).gte("created_at", since5min),
+  ]);
 
   return NextResponse.json({
     onlineNow: onlineNow ?? 0,
@@ -28,11 +22,10 @@ export async function GET(req: NextRequest) {
       country: v.country,
       city: v.city,
       ua: v.ua,
+      source: v.source || "direct",
       timestamp: new Date(v.created_at).getTime(),
     })),
-  }, {
-    headers: { "Cache-Control": "no-store" },
-  });
+  }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function DELETE(req: NextRequest) {
