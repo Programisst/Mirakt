@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { waitUntil } from "@vercel/functions";
 import { createClient } from "@supabase/supabase-js";
 import Parser from "rss-parser";
 import { uniqueSlug } from "@/lib/slugify";
 
-// Give the background pipeline the full Hobby-tier window (60s).
+// Run the pipeline synchronously inside the full Hobby-tier window (60s).
 export const maxDuration = 60;
 
 // ── Supabase admin (bypasses RLS for inserts) ─────────────────────────────────
@@ -249,26 +248,37 @@ async function runPipeline(): Promise<PipelineResult> {
 
   const categories = ["main", "world", "russia", "economy", "politics", "science", "crimea"];
   const MAX_PER_CAT = 2;
-  // Round-robin: one per category first (guarantees every tab gets filled),
-  // then a second pass for extras — as many as fit in the 60s function window.
   const perCat: Record<string, Candidate[]> = {};
   for (const cat of categories) {
     perCat[cat] = newOnes
       .filter((c) => c.category === cat)
       .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
   }
-  const toProcess: Candidate[] = [];
+  // Rotate which category leads each run (changes every 5 min) so that over a
+  // few runs every tab gets filled even though only ~5 articles fit per run.
+  const offset = Math.floor(Date.now() / (5 * 60 * 1000)) % categories.length;
+  const rotated = [...categories.slice(offset), ...categories.slice(0, offset)];
+
+  const queue: Candidate[] = [];
   for (let i = 0; i < MAX_PER_CAT; i++) {
-    for (const cat of categories) {
-      if (perCat[cat][i]) toProcess.push(perCat[cat][i]);
+    for (const cat of rotated) {
+      if (perCat[cat][i]) queue.push(perCat[cat][i]);
     }
   }
+  // Cap so the whole run returns inside the 30s cron-job.org timeout.
+  const toProcess = queue.slice(0, 6);
 
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   await db.from("articles").delete().lt("published_at", cutoff);
 
+  const startTime = Date.now();
   let saved = 0;
   for (const candidate of toProcess) {
+    // Stop early so we return within the 30s cron-job.org timeout.
+    if (Date.now() - startTime > 26_000) {
+      errors.push(`TIME_BUDGET: stopped, ${saved} saved`);
+      break;
+    }
     try {
       const result = await rewrite(candidate);
       if (result.skip) {
@@ -297,7 +307,7 @@ async function runPipeline(): Promise<PipelineResult> {
     } catch (e) {
       errors.push(`ERR [${candidate.category}]: ${String(e).slice(0, 100)}`);
     }
-    await new Promise((r) => setTimeout(r, 4000));
+    await new Promise((r) => setTimeout(r, 1000));
   }
 
   return {
@@ -319,16 +329,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  waitUntil(runPipeline());
-  return NextResponse.json({ ok: true, message: "processing" });
+  const result = await runPipeline();
+  return NextResponse.json({ ok: true, ...result });
 }
 
-// Allow GET for quick health check
+// GET runs the same pipeline so it can be triggered/inspected from a browser.
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get("secret") ?? "";
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && secret !== cronSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return NextResponse.json({ ok: true, ts: new Date().toISOString() });
+  const result = await runPipeline();
+  return NextResponse.json({ ok: true, ...result });
 }
