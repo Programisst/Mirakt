@@ -24,10 +24,11 @@ const FEEDS: { url: string; category: string }[] = [
   { url: "https://www.vedomosti.ru/rss/rubric/economics",          category: "economy" },
   { url: "https://tass.ru/rss/v2.xml?section=economy",             category: "economy" },
   { url: "https://www.vedomosti.ru/rss/rubric/politics",           category: "politics" },
-  { url: "https://lenta.ru/rss/news/russia",                       category: "politics" },
+  { url: "https://tass.ru/rss/v2.xml?section=politics",            category: "politics" },
   { url: "https://lenta.ru/rss/news/science",                      category: "science" },
   { url: "https://nplus1.ru/rss",                                  category: "science" },
   { url: "https://crimea.ria.ru/export/rss2/index.xml",            category: "crimea" },
+  { url: "https://tass.ru/rss/v2.xml?section=crimea",              category: "crimea" },
 ];
 
 // ── Candidate article ─────────────────────────────────────────────────────────
@@ -226,12 +227,16 @@ async function runPipeline() {
 
   for (const candidate of toProcess) {
     try {
-      const [result, ogImage] = await Promise.all([
-        rewrite(candidate),
-        candidate.thumbnail ? Promise.resolve(candidate.thumbnail) : fetchOgImage(candidate.link),
-      ]);
+      // Check image first — skip Groq call if no image available
+      const ogImage = candidate.thumbnail ? candidate.thumbnail : await fetchOgImage(candidate.link);
+      const finalImage = ogImage || null;
 
-      const finalImage = candidate.thumbnail || ogImage || null;
+      if (!finalImage) {
+        await sleep(5000);
+        continue;
+      }
+
+      const result = await rewrite(candidate);
 
       if (!result.skip && result.title && result.content) {
         const slug = uniqueSlug(result.title);
