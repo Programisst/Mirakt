@@ -159,9 +159,9 @@ function sleep(ms: number) {
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  // Auth check
-  const auth = req.headers.get("authorization") ?? "";
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Auth check via query param (more reliable on Netlify than headers)
+  const secret = req.nextUrl.searchParams.get("secret") ?? "";
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -240,10 +240,10 @@ export async function POST(req: NextRequest) {
   });
 }
 
-// Allow GET for quick health check (cron-job.org supports both)
+// Allow GET for quick health check
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get("authorization") ?? "";
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  const secret = req.nextUrl.searchParams.get("secret") ?? "";
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return NextResponse.json({ ok: true, ts: new Date().toISOString() });
