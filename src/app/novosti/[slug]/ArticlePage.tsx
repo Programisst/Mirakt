@@ -41,7 +41,7 @@ function ReadingProgress() {
   }, []);
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 2, zIndex: 200, background: "rgba(212,175,55,0.08)" }}>
-      <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${GOLD}, #f0d060)`, transition: "width 60ms linear", boxShadow: "0 0 10px rgba(212,175,55,0.5)" }} />
+      <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${GOLD}, #f0d060)`, transition: "width 60ms linear" }} />
     </div>
   );
 }
@@ -49,7 +49,7 @@ function ReadingProgress() {
 export function ArticlePage({ article }: { article: Article }) {
   const router = useRouter();
   const [imgError, setImgError] = useState(false);
-  const showHero = !!article.image_url && !imgError;
+  const hasImage = !!article.image_url && !imgError;
 
   const paragraphs = article.content
     .split(/\n\n+/)
@@ -65,10 +65,10 @@ export function ArticlePage({ article }: { article: Article }) {
         position: "sticky", top: 0, zIndex: 100,
         height: 54, display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "0 24px",
-        background: "rgba(3,3,3,0.9)",
+        background: "rgba(3,3,3,0.92)",
         borderBottom: "1px solid rgba(212,175,55,0.07)",
-        backdropFilter: "blur(24px) saturate(140%)",
-        WebkitBackdropFilter: "blur(24px) saturate(140%)",
+        backdropFilter: "blur(24px)",
+        WebkitBackdropFilter: "blur(24px)",
       }}>
         <button
           onClick={() => router.back()}
@@ -93,71 +93,54 @@ export function ArticlePage({ article }: { article: Article }) {
         <div style={{ width: 56 }} />
       </header>
 
-      {/* Hero image */}
-      {showHero && (
-        <div style={{ position: "relative", width: "100%", height: "clamp(300px, 60vw, 650px)", overflow: "hidden", background: "#050404" }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={article.image_url!}
-            alt={article.title}
-            onError={() => setImgError(true)}
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 25%", filter: "contrast(1.1) saturate(1.15)" }}
-          />
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "60%", background: "linear-gradient(to top, rgba(3,3,3,1) 0%, rgba(3,3,3,0.8) 30%, transparent 100%)" }} />
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "0 clamp(20px, 6vw, 96px) 44px" }}>
-            <div style={{ maxWidth: 820, margin: "0 auto" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                <span style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: GOLD, padding: "3px 8px", border: `1px solid rgba(212,175,55,0.3)`, borderRadius: 4 }}>
-                  {CAT_LABEL[article.category] ?? article.category}
-                </span>
-                <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                  {timeAgo(article.published_at)}
-                </span>
-              </div>
-              <h1 style={{ fontFamily: SERIF, fontSize: "clamp(22px, 4vw, 40px)", fontWeight: 700, lineHeight: 1.22, color: "#ffffff", letterSpacing: "-0.01em", textShadow: "0 2px 24px rgba(0,0,0,0.7)", margin: 0 }}>
-                {article.title}
-              </h1>
-            </div>
-          </div>
+      {/* Article content */}
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "48px clamp(20px, 5vw, 48px) 100px" }}>
+
+        {/* Meta */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <span style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: GOLD, padding: "3px 8px", border: `1px solid rgba(212,175,55,0.3)`, borderRadius: 4 }}>
+            {CAT_LABEL[article.category] ?? article.category}
+          </span>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            {timeAgo(article.published_at)}
+          </span>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            · Редакция Mirakt
+          </span>
         </div>
-      )}
 
-      {/* Content */}
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: `${showHero ? "44px" : "0"} clamp(20px, 5vw, 48px) 100px` }}>
+        {/* Title */}
+        <h1 style={{ fontFamily: SERIF, fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 700, lineHeight: 1.25, color: "#fff", letterSpacing: "-0.01em", margin: "0 0 24px 0" }}>
+          {article.title}
+        </h1>
 
-        {/* Title without hero */}
-        {!showHero && (
-          <div style={{ paddingTop: 52, marginBottom: 32 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-              <span style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: GOLD, padding: "3px 8px", border: `1px solid rgba(212,175,55,0.3)`, borderRadius: 4 }}>
-                {CAT_LABEL[article.category] ?? article.category}
-              </span>
-              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                {timeAgo(article.published_at)}
-              </span>
-            </div>
-            <h1 style={{ fontFamily: SERIF, fontSize: "clamp(24px, 4.5vw, 40px)", fontWeight: 700, lineHeight: 1.24, color: "#fff", letterSpacing: "-0.01em", margin: 0 }}>
-              {article.title}
-            </h1>
+        {/* Divider */}
+        <div style={{ height: 1, background: "linear-gradient(90deg, rgba(212,175,55,0.35), transparent)", marginBottom: 28 }} />
+
+        {/* Image — normal size, below title */}
+        {hasImage && (
+          <div style={{ marginBottom: 28, borderRadius: 12, overflow: "hidden" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={article.image_url!}
+              alt={article.title}
+              onError={() => setImgError(true)}
+              style={{ width: "100%", maxHeight: 400, objectFit: "cover", display: "block" }}
+            />
           </div>
         )}
 
-        {/* Divider */}
-        <div style={{ height: 1, background: "linear-gradient(90deg, rgba(212,175,55,0.35), transparent)", marginBottom: 32 }} />
-
         {/* Excerpt */}
-        <p style={{ fontFamily: SERIF, fontSize: 18, lineHeight: 1.75, color: "rgba(255,255,255,0.75)", marginBottom: 32, letterSpacing: "0.01em", fontStyle: "italic" }}>
+        <p style={{ fontFamily: SERIF, fontSize: 18, lineHeight: 1.75, color: "rgba(255,255,255,0.7)", marginBottom: 28, fontStyle: "italic" }}>
           {article.excerpt}
         </p>
 
-        {/* Full content */}
-        <div>
-          {paragraphs.map((para, i) => (
-            <p key={i} style={{ fontFamily: SERIF, fontSize: 17, lineHeight: 1.88, color: "rgba(255,255,255,0.72)", marginBottom: 24, letterSpacing: "0.012em" }}>
-              {para}
-            </p>
-          ))}
-        </div>
+        {/* Content */}
+        {paragraphs.map((para, i) => (
+          <p key={i} style={{ fontFamily: SERIF, fontSize: 17, lineHeight: 1.88, color: "rgba(255,255,255,0.72)", marginBottom: 22, letterSpacing: "0.012em" }}>
+            {para}
+          </p>
+        ))}
 
         {/* Footer */}
         <div style={{ marginTop: 56, paddingTop: 20, borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
@@ -166,9 +149,7 @@ export function ArticlePage({ article }: { article: Article }) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={LOGO_SRC} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             </div>
-            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              Редакция Mirakt
-            </span>
+            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Редакция Mirakt</span>
           </div>
           <button
             onClick={() => router.push("/")}

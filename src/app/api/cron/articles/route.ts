@@ -157,6 +157,26 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Fetch OG image from article page if RSS didn't provide one
+async function fetchOgImage(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Mirakt/1.0)" },
+      signal: AbortSignal.timeout(3000),
+    });
+    const html = await res.text();
+    const m =
+      html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ??
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ??
+      html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+    const src = m?.[1]?.trim() ?? "";
+    if (src && src.startsWith("http") && !src.includes("placeholder") && !src.endsWith(".svg")) return src;
+    return "";
+  } catch {
+    return "";
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   // Auth check — optional if env var not available in Netlify runtime
@@ -206,7 +226,13 @@ export async function POST(req: NextRequest) {
 
   for (const candidate of toProcess) {
     try {
-      const result = await rewrite(candidate);
+      // Run Groq rewrite and OG image fetch in parallel
+      const [result, ogImage] = await Promise.all([
+        rewrite(candidate),
+        candidate.thumbnail ? Promise.resolve(candidate.thumbnail) : fetchOgImage(candidate.link),
+      ]);
+
+      const finalImage = candidate.thumbnail || ogImage || null;
 
       if (result.skip || !result.title || !result.content) {
         skipped++;
@@ -217,7 +243,7 @@ export async function POST(req: NextRequest) {
           title:        result.title,
           excerpt:      result.excerpt ?? result.content.slice(0, 200),
           content:      result.content,
-          image_url:    candidate.thumbnail || null,
+          image_url:    finalImage,
           category:     candidate.category,
           published_at: candidate.pubDate,
           original_url: candidate.link,

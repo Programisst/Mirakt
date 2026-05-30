@@ -358,7 +358,7 @@ async function fetchCategory(cat: CategoryId): Promise<NewsItem[]> {
     const res = await fetch(`/api/articles?category=${cat}&page=0`, { cache: "no-store" });
     if (res.ok) {
       const articles = await res.json() as MirakcArticle[];
-      if (Array.isArray(articles) && articles.length >= 5) {
+      if (Array.isArray(articles) && articles.length >= 1) {
         return articles.map(mirakcToNewsItem);
       }
     }
