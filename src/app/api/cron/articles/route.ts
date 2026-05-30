@@ -221,10 +221,18 @@ export async function POST(req: NextRequest) {
   const existingSet = new Set((existing ?? []).map((r: { original_url: string }) => r.original_url));
   const newOnes = unique.filter((c) => !existingSet.has(c.link));
 
-  // Sort newest first, cap at 60 per run
-  const toProcess = newOnes
-    .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
-    .slice(0, 4);
+  // Pick 1 newest article per category, max 5 total to fit within timeout
+  const categories = ["main", "world", "russia", "economy", "politics", "russia", "science", "crimea"];
+  const toProcess: Candidate[] = [];
+  const usedCats = new Set<string>();
+  for (const cat of categories) {
+    if (toProcess.length >= 5) break;
+    if (usedCats.has(cat)) continue;
+    const pick = newOnes
+      .filter((c) => c.category === cat)
+      .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())[0];
+    if (pick) { toProcess.push(pick); usedCats.add(cat); }
+  }
 
   // Delete articles older than 7 days
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -265,8 +273,8 @@ export async function POST(req: NextRequest) {
       errors.push(String(e));
     }
 
-    // Groq free tier: 30 RPM → wait 1.5s between requests
-    await sleep(1500);
+    // Groq free tier: 30 RPM → wait 1s between requests
+    await sleep(1000);
   }
 
   return NextResponse.json({
