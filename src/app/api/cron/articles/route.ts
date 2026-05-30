@@ -226,6 +226,10 @@ export async function POST(req: NextRequest) {
     .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
     .slice(0, 4);
 
+  // Delete articles older than 7 days
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  await db.from("articles").delete().lt("published_at", cutoff);
+
   let saved = 0;
   let skipped = 0;
   const errors: string[] = [];
