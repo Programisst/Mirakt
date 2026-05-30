@@ -110,9 +110,9 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
       "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model:       "llama-3.1-8b-instant",
+      model:       "llama-3.3-70b-versatile",
       temperature: 0.7,
-      max_tokens:  1200,
+      max_tokens:  1000,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -166,7 +166,7 @@ async function fetchOgImage(url: string): Promise<string> {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ru-RU,ru;q=0.9",
       },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(2000),
     });
     const html = await res.text();
     const m =
@@ -228,7 +228,7 @@ export async function POST(req: NextRequest) {
     const picks = newOnes
       .filter((c) => c.category === cat)
       .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
-      .slice(0, 2);
+      .slice(0, 1);
     toProcess.push(...picks);
   }
 
@@ -240,8 +240,8 @@ export async function POST(req: NextRequest) {
   let skipped = 0;
   const errors: string[] = [];
 
-  // Process all categories in parallel — fits well within Groq 30 RPM limit
-  await Promise.all(toProcess.map(async (candidate) => {
+  // Sequential processing with 5s pause — stays within 12,000 TPM Groq free limit
+  for (const candidate of toProcess) {
     try {
       const [result, ogImage] = await Promise.all([
         rewrite(candidate),
@@ -270,7 +270,8 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       errors.push(String(e));
     }
-  }));
+    await sleep(5000);
+  }
 
   return NextResponse.json({
     processed: toProcess.length,
