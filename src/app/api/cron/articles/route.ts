@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { waitUntil } from "@vercel/functions";
 import { createClient } from "@supabase/supabase-js";
 import Parser from "rss-parser";
 import { uniqueSlug } from "@/lib/slugify";
@@ -17,9 +16,9 @@ const FEEDS: { url: string; category: string }[] = [
   { url: "https://lenta.ru/rss/news",                          category: "main" },
   { url: "https://ria.ru/export/rss2/index.xml",               category: "main" },
   { url: "https://lenta.ru/rss/news/world",                    category: "world" },
-  { url: "https://ria.ru/export/rss2/world.xml",               category: "world" },
+  { url: "https://tass.ru/rss/v2.xml",                         category: "world" },
   { url: "https://lenta.ru/rss/news/russia",                   category: "russia" },
-  { url: "https://ria.ru/export/rss2/politics.xml",            category: "russia" },
+  { url: "https://ria.ru/export/rss2/index.xml",               category: "russia" },
   { url: "https://www.vedomosti.ru/rss/rubric/economics",      category: "economy" },
   { url: "https://lenta.ru/rss/news/economics",                category: "economy" },
   { url: "https://www.vedomosti.ru/rss/rubric/politics",       category: "politics" },
@@ -201,7 +200,7 @@ async function fetchOgImage(url: string): Promise<string> {
   }
 }
 
-async function runPipeline() {
+async function runPipeline(): Promise<number> {
   const db = adminDb();
 
   const feedResults = await Promise.allSettled(
@@ -241,14 +240,15 @@ async function runPipeline() {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   await db.from("articles").delete().lt("published_at", cutoff);
 
-  for (const candidate of toProcess) {
+  let saved = 0;
+  await Promise.all(toProcess.map(async (candidate) => {
     try {
       const result = await rewrite(candidate);
       if (!result.skip && result.title && result.content) {
         const rssOrOg = candidate.thumbnail || await fetchOgImage(candidate.link);
         const finalImage = rssOrOg || aiImage(result.image_prompt || result.title);
         const slug = uniqueSlug(result.title);
-        await db.from("articles").insert({
+        const { error } = await db.from("articles").insert({
           slug,
           title:        result.title,
           excerpt:      result.excerpt ?? result.content.slice(0, 200),
@@ -258,10 +258,12 @@ async function runPipeline() {
           published_at: candidate.pubDate,
           original_url: candidate.link,
         });
+        if (!error) saved++;
       }
     } catch { /* silent */ }
-    await new Promise((r) => setTimeout(r, 2000));
-  }
+  }));
+
+  return saved;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -272,10 +274,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Respond immediately — processing continues in background (Vercel waitUntil)
-  waitUntil(runPipeline());
-
-  return NextResponse.json({ ok: true, message: "Processing started in background" });
+  const saved = await runPipeline();
+  return NextResponse.json({ ok: true, saved });
 }
 
 // Allow GET for quick health check
