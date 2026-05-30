@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createClient } from "@supabase/supabase-js";
 import Parser from "rss-parser";
 import { uniqueSlug } from "@/lib/slugify";
@@ -252,39 +253,38 @@ async function runPipeline(): Promise<PipelineResult> {
   await db.from("articles").delete().lt("published_at", cutoff);
 
   let saved = 0;
-  await Promise.all(toProcess.map(async (candidate) => {
+  for (const candidate of toProcess) {
     try {
       const result = await rewrite(candidate);
       if (result.skip) {
         errors.push(`SKIP [${candidate.category}]: ${candidate.title.slice(0, 50)}`);
-        return;
-      }
-      if (!result.title || !result.content) {
-        errors.push(`NO_CONTENT [${candidate.category}]: ${candidate.title.slice(0, 50)}`);
-        return;
-      }
-      const rssOrOg = candidate.thumbnail || await fetchOgImage(candidate.link);
-      const finalImage = rssOrOg || aiImage(result.image_prompt || result.title);
-      const slug = uniqueSlug(result.title);
-      const { error } = await db.from("articles").insert({
-        slug,
-        title:        result.title,
-        excerpt:      result.excerpt ?? result.content.slice(0, 200),
-        content:      result.content,
-        image_url:    finalImage,
-        category:     candidate.category,
-        published_at: candidate.pubDate,
-        original_url: candidate.link,
-      });
-      if (error) {
-        errors.push(`DB_ERR [${candidate.category}]: ${error.message}`);
+      } else if (!result.title || !result.content) {
+        errors.push(`NO_CONTENT [${candidate.category}]`);
       } else {
-        saved++;
+        const rssOrOg = candidate.thumbnail || await fetchOgImage(candidate.link);
+        const finalImage = rssOrOg || aiImage(result.image_prompt || result.title);
+        const slug = uniqueSlug(result.title);
+        const { error } = await db.from("articles").insert({
+          slug,
+          title:        result.title,
+          excerpt:      result.excerpt ?? result.content.slice(0, 200),
+          content:      result.content,
+          image_url:    finalImage,
+          category:     candidate.category,
+          published_at: candidate.pubDate,
+          original_url: candidate.link,
+        });
+        if (error) {
+          errors.push(`DB_ERR [${candidate.category}]: ${error.message}`);
+        } else {
+          saved++;
+        }
       }
     } catch (e) {
       errors.push(`ERR [${candidate.category}]: ${String(e).slice(0, 100)}`);
     }
-  }));
+    await new Promise((r) => setTimeout(r, 5000));
+  }
 
   return {
     candidates: candidates.length,
@@ -305,8 +305,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const result = await runPipeline();
-  return NextResponse.json({ ok: true, ...result });
+  waitUntil(runPipeline());
+  return NextResponse.json({ ok: true, message: "processing" });
 }
 
 // Allow GET for quick health check
