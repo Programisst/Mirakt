@@ -221,17 +221,14 @@ export async function POST(req: NextRequest) {
   const existingSet = new Set((existing ?? []).map((r: { original_url: string }) => r.original_url));
   const newOnes = unique.filter((c) => !existingSet.has(c.link));
 
-  // Pick 1 newest article per category, max 5 total to fit within timeout
-  const categories = ["main", "world", "russia", "economy", "politics", "russia", "science", "crimea"];
+  // Pick 1 newest article per category (7 categories = 7 articles per run)
+  const categories = ["main", "world", "russia", "economy", "politics", "science", "crimea"];
   const toProcess: Candidate[] = [];
-  const usedCats = new Set<string>();
   for (const cat of categories) {
-    if (toProcess.length >= 5) break;
-    if (usedCats.has(cat)) continue;
     const pick = newOnes
       .filter((c) => c.category === cat)
       .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())[0];
-    if (pick) { toProcess.push(pick); usedCats.add(cat); }
+    if (pick) toProcess.push(pick);
   }
 
   // Delete articles older than 7 days
@@ -242,9 +239,9 @@ export async function POST(req: NextRequest) {
   let skipped = 0;
   const errors: string[] = [];
 
-  for (const candidate of toProcess) {
+  // Process all categories in parallel — fits well within Groq 30 RPM limit
+  await Promise.all(toProcess.map(async (candidate) => {
     try {
-      // Run Groq rewrite and OG image fetch in parallel
       const [result, ogImage] = await Promise.all([
         rewrite(candidate),
         candidate.thumbnail ? Promise.resolve(candidate.thumbnail) : fetchOgImage(candidate.link),
@@ -272,10 +269,7 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       errors.push(String(e));
     }
-
-    // Groq free tier: 30 RPM → wait 1s between requests
-    await sleep(1000);
-  }
+  }));
 
   return NextResponse.json({
     processed: toProcess.length,
