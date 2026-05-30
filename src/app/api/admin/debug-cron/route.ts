@@ -54,12 +54,20 @@ export async function GET(req: NextRequest) {
   const { count } = await db.from("articles").select("id", { count: "exact", head: true });
   log.db_count = count;
 
-  // Step 3: test Groq
-  const groqTest = await fetch("https://api.groq.com/openai/v1/models", {
-    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+  // Step 3: test Groq with actual completion call
+  const groqTest = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      max_tokens: 10,
+      messages: [{ role: "user", content: "say hi" }],
+    }),
   });
+  const groqBody = await groqTest.text();
   log.groq_ok = groqTest.ok;
   log.groq_status = groqTest.status;
+  log.groq_response = groqBody.slice(0, 300);
 
   // Step 4: env check
   log.env = {
