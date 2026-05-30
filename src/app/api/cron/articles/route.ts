@@ -241,8 +241,7 @@ async function runPipeline() {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   await db.from("articles").delete().lt("published_at", cutoff);
 
-  // Process all in parallel — fits within Vercel hobby 10s limit and Groq 12k TPM
-  await Promise.all(toProcess.map(async (candidate) => {
+  for (const candidate of toProcess) {
     try {
       const result = await rewrite(candidate);
       if (!result.skip && result.title && result.content) {
@@ -261,7 +260,8 @@ async function runPipeline() {
         });
       }
     } catch { /* silent */ }
-  }));
+    await new Promise((r) => setTimeout(r, 2000));
+  }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
