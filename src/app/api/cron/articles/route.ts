@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
   // Sort newest first, cap at 60 per run
   const toProcess = newOnes
     .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
-    .slice(0, 8);
+    .slice(0, 4);
 
   let saved = 0;
   let skipped = 0;
@@ -229,8 +229,8 @@ export async function POST(req: NextRequest) {
       errors.push(String(e));
     }
 
-    // Groq free tier: 30 RPM → wait 2.2s between requests
-    await sleep(2200);
+    // Groq free tier: 30 RPM → wait 1.5s between requests
+    await sleep(1500);
   }
 
   return NextResponse.json({
