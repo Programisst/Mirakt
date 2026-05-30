@@ -352,18 +352,16 @@ function mirakcToNewsItem(a: MirakcArticle): NewsItem {
   };
 }
 
-/** Try to load Mirakt articles from DB first; fall back to RSS if DB is empty. */
+/** Load only Mirakt DB articles — no RSS fallback. */
 async function fetchCategory(cat: CategoryId): Promise<NewsItem[]> {
   try {
     const res = await fetch(`/api/articles?category=${cat}&page=0`, { cache: "no-store" });
     if (res.ok) {
       const articles = await res.json() as MirakcArticle[];
-      if (Array.isArray(articles) && articles.length >= 1) {
-        return articles.map(mirakcToNewsItem);
-      }
+      if (Array.isArray(articles)) return articles.map(mirakcToNewsItem);
     }
-  } catch { /* fall through to RSS */ }
-  return fetchNewsByCategory(cat);
+  } catch { /* silent */ }
+  return [];
 }
 
 // ─────────────────────────────── News pipeline ───────────────────────────────

@@ -221,14 +221,15 @@ export async function POST(req: NextRequest) {
   const existingSet = new Set((existing ?? []).map((r: { original_url: string }) => r.original_url));
   const newOnes = unique.filter((c) => !existingSet.has(c.link));
 
-  // Pick 1 newest article per category (7 categories = 7 articles per run)
+  // Pick up to 3 newest articles per category = up to 21 per run, all processed in parallel
   const categories = ["main", "world", "russia", "economy", "politics", "science", "crimea"];
   const toProcess: Candidate[] = [];
   for (const cat of categories) {
-    const pick = newOnes
+    const picks = newOnes
       .filter((c) => c.category === cat)
-      .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())[0];
-    if (pick) toProcess.push(pick);
+      .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
+      .slice(0, 3);
+    toProcess.push(...picks);
   }
 
   // Delete articles older than 7 days
