@@ -125,9 +125,9 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
       "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model:       "llama-3.3-70b-versatile",
+      model:       "llama-3.1-8b-instant",
       temperature: 0.7,
-      max_tokens:  1100,
+      max_tokens:  1000,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -138,7 +138,7 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
 - Только русский язык
 - Новый привлекательный заголовок (не копируй оригинал)
 - excerpt: 2-3 предложения, краткое описание
-- content: 650-900 слов, абзацы разделены \\n\\n, деловой стиль
+- content: 450-600 слов, абзацы разделены \\n\\n, деловой стиль
 - НЕ упоминай источник (РИА, ТАСС, Лента, Коммерсант и т.д.)
 - image_prompt: 6-10 слов на английском для AI генерации фото, по теме статьи
 - Пропусти ТОЛЬКО если: секс, наркотики, ЛГБТ+, экстремизм, терроризм, дискредитация армии РФ, жестокое насилие
@@ -265,8 +265,8 @@ async function runPipeline(): Promise<PipelineResult> {
       if (perCat[cat][i]) queue.push(perCat[cat][i]);
     }
   }
-  // Cap so the whole run returns inside the 30s cron-job.org timeout.
-  const toProcess = queue.slice(0, 6);
+  // Cap at 4 so we stay inside both the 30s timeout and the 8b TPM (6000/min).
+  const toProcess = queue.slice(0, 4);
 
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   await db.from("articles").delete().lt("published_at", cutoff);
