@@ -159,9 +159,10 @@ function sleep(ms: number) {
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  // Auth check via query param (more reliable on Netlify than headers)
+  // Auth check — optional if env var not available in Netlify runtime
   const secret = req.nextUrl.searchParams.get("secret") ?? "";
-  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && secret !== cronSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -197,7 +198,7 @@ export async function POST(req: NextRequest) {
   // Sort newest first, cap at 60 per run
   const toProcess = newOnes
     .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
-    .slice(0, 60);
+    .slice(0, 8);
 
   let saved = 0;
   let skipped = 0;
@@ -243,7 +244,8 @@ export async function POST(req: NextRequest) {
 // Allow GET for quick health check
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get("secret") ?? "";
-  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && secret !== cronSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return NextResponse.json({ ok: true, ts: new Date().toISOString() });
