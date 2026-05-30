@@ -110,9 +110,9 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
       "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model:       "llama-3.3-70b-versatile",
+      model:       "llama-3.1-8b-instant",
       temperature: 0.7,
-      max_tokens:  1800,
+      max_tokens:  1200,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -228,7 +228,7 @@ export async function POST(req: NextRequest) {
     const picks = newOnes
       .filter((c) => c.category === cat)
       .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
-      .slice(0, 3);
+      .slice(0, 2);
     toProcess.push(...picks);
   }
 
