@@ -117,15 +117,15 @@ export function ArticlePage({ article }: { article: Article }) {
         {/* Divider */}
         <div style={{ height: 1, background: "linear-gradient(90deg, rgba(212,175,55,0.35), transparent)", marginBottom: 28 }} />
 
-        {/* Image — normal size, below title */}
+        {/* Image — compact, below title */}
         {hasImage && (
-          <div style={{ marginBottom: 28, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ marginBottom: 28, display: "flex", justifyContent: "center" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={article.image_url!}
               alt={article.title}
               onError={() => setImgError(true)}
-              style={{ width: "100%", maxHeight: 400, objectFit: "cover", display: "block" }}
+              style={{ maxWidth: "100%", maxHeight: 260, width: "auto", borderRadius: 10, objectFit: "contain", display: "block" }}
             />
           </div>
         )}
