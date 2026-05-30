@@ -14,21 +14,20 @@ function adminDb() {
 
 // ── RSS feeds per category ────────────────────────────────────────────────────
 const FEEDS: { url: string; category: string }[] = [
-  { url: "https://lenta.ru/rss/news",                              category: "main" },
-  { url: "https://ria.ru/export/rss2/index.xml",                   category: "main" },
-  { url: "https://tass.ru/rss/v2.xml",                             category: "main" },
-  { url: "https://lenta.ru/rss/news/world",                        category: "world" },
-  { url: "https://tass.ru/rss/v2.xml?section=world",               category: "world" },
-  { url: "https://lenta.ru/rss/news/russia",                       category: "russia" },
-  { url: "https://tass.ru/rss/v2.xml?section=russia",              category: "russia" },
-  { url: "https://www.vedomosti.ru/rss/rubric/economics",          category: "economy" },
-  { url: "https://tass.ru/rss/v2.xml?section=economy",             category: "economy" },
-  { url: "https://www.vedomosti.ru/rss/rubric/politics",           category: "politics" },
-  { url: "https://tass.ru/rss/v2.xml?section=politics",            category: "politics" },
-  { url: "https://lenta.ru/rss/news/science",                      category: "science" },
-  { url: "https://nplus1.ru/rss",                                  category: "science" },
-  { url: "https://crimea.ria.ru/export/rss2/index.xml",            category: "crimea" },
-  { url: "https://tass.ru/rss/v2.xml?section=crimea",              category: "crimea" },
+  { url: "https://lenta.ru/rss/news",                          category: "main" },
+  { url: "https://ria.ru/export/rss2/index.xml",               category: "main" },
+  { url: "https://lenta.ru/rss/news/world",                    category: "world" },
+  { url: "https://ria.ru/export/rss2/world.xml",               category: "world" },
+  { url: "https://lenta.ru/rss/news/russia",                   category: "russia" },
+  { url: "https://ria.ru/export/rss2/politics.xml",            category: "russia" },
+  { url: "https://www.vedomosti.ru/rss/rubric/economics",      category: "economy" },
+  { url: "https://lenta.ru/rss/news/economics",                category: "economy" },
+  { url: "https://www.vedomosti.ru/rss/rubric/politics",       category: "politics" },
+  { url: "https://lenta.ru/rss/news/politics",                 category: "politics" },
+  { url: "https://lenta.ru/rss/news/science",                  category: "science" },
+  { url: "https://nplus1.ru/rss",                              category: "science" },
+  { url: "https://crimea.ria.ru/export/rss2/index.xml",        category: "crimea" },
+  { url: "https://lenta.ru/rss/news/ucraina",                  category: "crimea" },
 ];
 
 // ── Candidate article ─────────────────────────────────────────────────────────
@@ -96,15 +95,27 @@ async function fetchFeed(url: string, category: string): Promise<Candidate[]> {
   }
 }
 
+const CAT_NAMES: Record<string, string> = {
+  main: "главные новости России",
+  world: "мировые новости",
+  russia: "новости России",
+  economy: "экономика и финансы",
+  politics: "политика",
+  science: "наука и технологии",
+  crimea: "новости Крыма",
+};
+
 // ── Groq rewrite ──────────────────────────────────────────────────────────────
 interface Rewritten {
   skip: boolean;
   title?: string;
   excerpt?: string;
   content?: string;
+  image_prompt?: string;
 }
 
 async function rewrite(candidate: Candidate): Promise<Rewritten> {
+  const catName = CAT_NAMES[candidate.category] ?? candidate.category;
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -114,12 +125,12 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
     body: JSON.stringify({
       model:       "llama-3.3-70b-versatile",
       temperature: 0.7,
-      max_tokens:  1000,
+      max_tokens:  1100,
       response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
-          content: `Ты редактор новостного портала Mirakt. Перепиши новость как оригинальную статью.
+          content: `Ты редактор новостного портала Mirakt. Раздел: «${catName}».
 
 Правила:
 - Только русский язык
@@ -127,11 +138,12 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
 - excerpt: 2-3 предложения, краткое описание
 - content: 650-900 слов, абзацы разделены \\n\\n, деловой стиль
 - НЕ упоминай источник (РИА, ТАСС, Лента, Коммерсант и т.д.)
-- Пропусти если: секс, наркотики, ЛГБТ+, экстремизм, терроризм, дискредитация армии РФ, жестокое насилие
+- image_prompt: 6-10 слов на английском для генерации фото, реалистичный стиль, по теме статьи
+- Пропусти если: тема НЕ относится к разделу «${catName}», или содержит: секс, наркотики, ЛГБТ+, экстремизм, терроризм, дискредитация армии РФ, жестокое насилие
 
 Ответ ТОЛЬКО в JSON:
 {"skip":true} — если пропустить
-{"skip":false,"title":"...","excerpt":"...","content":"..."}`,
+{"skip":false,"title":"...","excerpt":"...","content":"...","image_prompt":"..."}`,
         },
         {
           role: "user",
@@ -159,16 +171,13 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// Category fallback images (Unsplash permanent URLs)
-const CATEGORY_IMAGES: Record<string, string> = {
-  main:     "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&q=80",
-  world:    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80",
-  russia:   "https://images.unsplash.com/photo-1513326738677-b964603b136d?w=800&q=80",
-  economy:  "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&q=80",
-  politics: "https://images.unsplash.com/photo-1529107386315-e1a2ed48a620?w=800&q=80",
-  science:  "https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=800&q=80",
-  crimea:   "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=800&q=80",
-};
+function aiImage(prompt: string): string {
+  const seed = Math.floor(Math.random() * 999999);
+  const encoded = encodeURIComponent(
+    `${prompt}, photorealistic, high quality news photo, no text`
+  );
+  return `https://image.pollinations.ai/prompt/${encoded}?width=800&height=500&seed=${seed}&nologo=true`;
+}
 
 // Fetch OG image from article page if RSS didn't provide one
 async function fetchOgImage(url: string): Promise<string> {
@@ -229,7 +238,7 @@ async function runPipeline() {
     const picks = newOnes
       .filter((c) => c.category === cat)
       .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
-      .slice(0, 1);
+      .slice(0, 2);
     toProcess.push(...picks);
   }
 
@@ -238,13 +247,13 @@ async function runPipeline() {
 
   for (const candidate of toProcess) {
     try {
-      // Get image: RSS thumbnail → OG scrape → category fallback
-      const ogImage = candidate.thumbnail ? candidate.thumbnail : await fetchOgImage(candidate.link);
-      const finalImage = ogImage || CATEGORY_IMAGES[candidate.category] || null;
-
       const result = await rewrite(candidate);
 
       if (!result.skip && result.title && result.content) {
+        // Image priority: RSS thumbnail → OG scrape → AI generated
+        const rssOrOg = candidate.thumbnail || await fetchOgImage(candidate.link);
+        const finalImage = rssOrOg || aiImage(result.image_prompt || result.title);
+
         const slug = uniqueSlug(result.title);
         await db.from("articles").insert({
           slug,
