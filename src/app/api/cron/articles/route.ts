@@ -200,8 +200,19 @@ async function fetchOgImage(url: string): Promise<string> {
   }
 }
 
-async function runPipeline(): Promise<number> {
+interface PipelineResult {
+  candidates: number;
+  unique: number;
+  existing_in_db: number;
+  new_ones: number;
+  to_process: number;
+  saved: number;
+  errors: string[];
+}
+
+async function runPipeline(): Promise<PipelineResult> {
   const db = adminDb();
+  const errors: string[] = [];
 
   const feedResults = await Promise.allSettled(
     FEEDS.map((f) => fetchFeed(f.url, f.category))
@@ -244,26 +255,46 @@ async function runPipeline(): Promise<number> {
   await Promise.all(toProcess.map(async (candidate) => {
     try {
       const result = await rewrite(candidate);
-      if (!result.skip && result.title && result.content) {
-        const rssOrOg = candidate.thumbnail || await fetchOgImage(candidate.link);
-        const finalImage = rssOrOg || aiImage(result.image_prompt || result.title);
-        const slug = uniqueSlug(result.title);
-        const { error } = await db.from("articles").insert({
-          slug,
-          title:        result.title,
-          excerpt:      result.excerpt ?? result.content.slice(0, 200),
-          content:      result.content,
-          image_url:    finalImage,
-          category:     candidate.category,
-          published_at: candidate.pubDate,
-          original_url: candidate.link,
-        });
-        if (!error) saved++;
+      if (result.skip) {
+        errors.push(`SKIP [${candidate.category}]: ${candidate.title.slice(0, 50)}`);
+        return;
       }
-    } catch { /* silent */ }
+      if (!result.title || !result.content) {
+        errors.push(`NO_CONTENT [${candidate.category}]: ${candidate.title.slice(0, 50)}`);
+        return;
+      }
+      const rssOrOg = candidate.thumbnail || await fetchOgImage(candidate.link);
+      const finalImage = rssOrOg || aiImage(result.image_prompt || result.title);
+      const slug = uniqueSlug(result.title);
+      const { error } = await db.from("articles").insert({
+        slug,
+        title:        result.title,
+        excerpt:      result.excerpt ?? result.content.slice(0, 200),
+        content:      result.content,
+        image_url:    finalImage,
+        category:     candidate.category,
+        published_at: candidate.pubDate,
+        original_url: candidate.link,
+      });
+      if (error) {
+        errors.push(`DB_ERR [${candidate.category}]: ${error.message}`);
+      } else {
+        saved++;
+      }
+    } catch (e) {
+      errors.push(`ERR [${candidate.category}]: ${String(e).slice(0, 100)}`);
+    }
   }));
 
-  return saved;
+  return {
+    candidates: candidates.length,
+    unique: unique.length,
+    existing_in_db: existingSet.size,
+    new_ones: newOnes.length,
+    to_process: toProcess.length,
+    saved,
+    errors,
+  };
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -274,8 +305,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const saved = await runPipeline();
-  return NextResponse.json({ ok: true, saved });
+  const result = await runPipeline();
+  return NextResponse.json({ ok: true, ...result });
 }
 
 // Allow GET for quick health check
