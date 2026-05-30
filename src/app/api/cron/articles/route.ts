@@ -112,7 +112,7 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
     body: JSON.stringify({
       model:       "llama-3.3-70b-versatile",
       temperature: 0.7,
-      max_tokens:  1400,
+      max_tokens:  1800,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -123,7 +123,7 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
 - Только русский язык
 - Новый привлекательный заголовок (не копируй оригинал)
 - excerpt: 2-3 предложения, краткое описание
-- content: 450-650 слов, абзацы разделены \\n\\n, деловой стиль
+- content: 650-900 слов, абзацы разделены \\n\\n, деловой стиль
 - НЕ упоминай источник (РИА, ТАСС, Лента, Коммерсант и т.д.)
 - Пропусти если: секс, наркотики, ЛГБТ+, экстремизм, терроризм, дискредитация армии РФ, жестокое насилие
 
@@ -161,14 +161,20 @@ function sleep(ms: number) {
 async function fetchOgImage(url: string): Promise<string> {
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Mirakt/1.0)" },
-      signal: AbortSignal.timeout(3000),
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ru-RU,ru;q=0.9",
+      },
+      signal: AbortSignal.timeout(5000),
     });
     const html = await res.text();
     const m =
       html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ??
       html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ??
-      html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+      html.match(/<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i) ??
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i) ??
+      html.match(/<img[^>]+class=["'][^"']*(?:article|main|hero|lead|photo)[^"']*["'][^>]+src=["']([^"']+)["']/i);
     const src = m?.[1]?.trim() ?? "";
     if (src && src.startsWith("http") && !src.includes("placeholder") && !src.endsWith(".svg")) return src;
     return "";

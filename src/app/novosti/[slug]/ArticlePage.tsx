@@ -110,7 +110,7 @@ export function ArticlePage({ article }: { article: Article }) {
         </div>
 
         {/* Title */}
-        <h1 style={{ fontFamily: SERIF, fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 700, lineHeight: 1.25, color: "#fff", letterSpacing: "-0.01em", margin: "0 0 24px 0" }}>
+        <h1 style={{ fontFamily: SERIF, fontSize: "clamp(20px, 3vw, 28px)", fontWeight: 500, lineHeight: 1.35, color: "rgba(255,255,255,0.92)", letterSpacing: "0.005em", margin: "0 0 24px 0" }}>
           {article.title}
         </h1>
 
