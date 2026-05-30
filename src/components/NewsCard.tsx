@@ -32,7 +32,9 @@ export function NewsCard({
 
   const stretchCard = featured || fill;
 
-  const articleHref = `/news/${encodeURIComponent(item.id)}?d=${encodeURIComponent(JSON.stringify(item))}`;
+  const articleHref = item.mirakt_slug
+    ? `/novosti/${item.mirakt_slug}`
+    : `/news/${encodeURIComponent(item.id)}?d=${encodeURIComponent(JSON.stringify(item))}`;
 
   return (
     <Link

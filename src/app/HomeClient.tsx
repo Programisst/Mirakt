@@ -10,7 +10,7 @@ import { CATEGORIES, type CategoryId } from "@/constants/categories";
 import { isCleanNewsText } from "@/lib/content-filter";
 import { isValidNewsImage } from "@/lib/thumbnail";
 import { GOLD, LOGO_SRC } from "@/constants/site";
-import type { AuthUser, CurrencyRates, NewsItem } from "@/types/news";
+import type { AuthUser, CurrencyRates, MirakcArticle, NewsItem } from "@/types/news";
 import { supabase } from "@/lib/supabase";
 import { useLocale } from "@/lib/locale-context";
 
@@ -338,8 +338,31 @@ async function fetchNewsByCategory(cat: CategoryId): Promise<NewsItem[]> {
   return diversifyByDomain(pool);
 }
 
-/** Старое имя — прозрачный алиас. */
+/** Convert a Mirakt DB article to the NewsItem shape used by NewsCard. */
+function mirakcToNewsItem(a: MirakcArticle): NewsItem {
+  return {
+    id:          a.id,
+    title:       a.title,
+    description: a.excerpt,
+    link:        `/novosti/${a.slug}`,
+    pubDate:     a.published_at,
+    thumbnail:   a.image_url ?? "",
+    source:      "Mirakt",
+    mirakt_slug: a.slug,
+  };
+}
+
+/** Try to load Mirakt articles from DB first; fall back to RSS if DB is empty. */
 async function fetchCategory(cat: CategoryId): Promise<NewsItem[]> {
+  try {
+    const res = await fetch(`/api/articles?category=${cat}&page=0`, { cache: "no-store" });
+    if (res.ok) {
+      const articles = await res.json() as MirakcArticle[];
+      if (Array.isArray(articles) && articles.length >= 5) {
+        return articles.map(mirakcToNewsItem);
+      }
+    }
+  } catch { /* fall through to RSS */ }
   return fetchNewsByCategory(cat);
 }
 

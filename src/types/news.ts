@@ -8,6 +8,17 @@ export interface NewsItem {
   source: string;
   content?: string;
   editorial?: boolean;
+  mirakt_slug?: string; // set for Mirakt-authored articles → links to /novosti/[slug]
+}
+
+export interface MirakcArticle {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  image_url: string | null;
+  category: string;
+  published_at: string;
 }
 
 export interface CurrencyRates {
