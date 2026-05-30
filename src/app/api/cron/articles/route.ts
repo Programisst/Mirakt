@@ -159,6 +159,17 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Category fallback images (Unsplash permanent URLs)
+const CATEGORY_IMAGES: Record<string, string> = {
+  main:     "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&q=80",
+  world:    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80",
+  russia:   "https://images.unsplash.com/photo-1513326738677-b964603b136d?w=800&q=80",
+  economy:  "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&q=80",
+  politics: "https://images.unsplash.com/photo-1529107386315-e1a2ed48a620?w=800&q=80",
+  science:  "https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=800&q=80",
+  crimea:   "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=800&q=80",
+};
+
 // Fetch OG image from article page if RSS didn't provide one
 async function fetchOgImage(url: string): Promise<string> {
   try {
@@ -227,14 +238,9 @@ async function runPipeline() {
 
   for (const candidate of toProcess) {
     try {
-      // Check image first — skip Groq call if no image available
+      // Get image: RSS thumbnail → OG scrape → category fallback
       const ogImage = candidate.thumbnail ? candidate.thumbnail : await fetchOgImage(candidate.link);
-      const finalImage = ogImage || null;
-
-      if (!finalImage) {
-        await sleep(5000);
-        continue;
-      }
+      const finalImage = ogImage || CATEGORY_IMAGES[candidate.category] || null;
 
       const result = await rewrite(candidate);
 
