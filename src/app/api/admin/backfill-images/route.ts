@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+export const maxDuration = 60;
+
 function adminDb() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,20 +10,47 @@ function adminDb() {
   );
 }
 
-async function fetchOgImage(url: string): Promise<string> {
+// Turn a Russian news title into 4-6 English keywords for Pexels search.
+async function keywordsFromTitle(title: string): Promise<string> {
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Mirakt/1.0)" },
-      signal: AbortSignal.timeout(4000),
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        temperature: 0.3,
+        max_tokens: 30,
+        messages: [
+          {
+            role: "user",
+            content: `Дай 4-6 английских ключевых слов для поиска фотостока по этой новости. Только слова через пробел, без кавычек и пояснений.\nНовость: ${title}`,
+          },
+        ],
+      }),
     });
-    const html = await res.text();
-    const m =
-      html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ??
-      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ??
-      html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-    const src = m?.[1]?.trim() ?? "";
-    if (src && src.startsWith("http") && !src.includes("placeholder") && !src.endsWith(".svg")) return src;
+    if (!res.ok) return "";
+    const data = await res.json();
+    return (data.choices?.[0]?.message?.content ?? "").trim().replace(/["']/g, "");
+  } catch {
     return "";
+  }
+}
+
+async function pexelsImage(query: string): Promise<string> {
+  const key = process.env.PEXELS_API_KEY;
+  if (!key || !query) return "";
+  try {
+    const res = await fetch(
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=1&orientation=landscape&size=medium`,
+      { headers: { Authorization: key }, signal: AbortSignal.timeout(6000) }
+    );
+    if (!res.ok) return "";
+    const data = await res.json();
+    const photo = data.photos?.[0];
+    return photo?.src?.large ?? photo?.src?.landscape ?? photo?.src?.medium ?? "";
   } catch {
     return "";
   }
@@ -30,44 +59,34 @@ async function fetchOgImage(url: string): Promise<string> {
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get("secret") ?? "";
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && secret !== cronSecret) {
+  if (!cronSecret || secret !== cronSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const db = adminDb();
-
-  // Get up to 8 articles without image that have original_url
   const { data: articles } = await db
     .from("articles")
-    .select("id, original_url")
-    .is("image_url", null)
-    .not("original_url", "is", null)
-    .limit(8);
+    .select("id, title, image_url")
+    .or("image_url.is.null,image_url.eq.")
+    .limit(15);
 
   if (!articles || articles.length === 0) {
-    return NextResponse.json({ updated: 0, message: "No articles without images" });
+    return NextResponse.json({ message: "No articles need images", updated: 0 });
   }
 
-  // Fetch OG images in parallel (max 8 concurrent)
-  const results = await Promise.allSettled(
-    articles.map(async (a: { id: string; original_url: string }) => {
-      const img = await fetchOgImage(a.original_url);
-      if (img) {
-        await db.from("articles").update({ image_url: img }).eq("id", a.id);
-        return { id: a.id, img };
-      }
-      return null;
-    })
-  );
+  let updated = 0;
+  const errors: string[] = [];
+  for (const article of articles) {
+    const keywords = (await keywordsFromTitle(article.title)) || article.title;
+    const img = await pexelsImage(keywords);
+    if (img) {
+      await db.from("articles").update({ image_url: img }).eq("id", article.id);
+      updated++;
+    } else {
+      errors.push(article.title.slice(0, 40));
+    }
+    await new Promise((r) => setTimeout(r, 2500));
+  }
 
-  const updated = results.filter(
-    (r) => r.status === "fulfilled" && r.value !== null
-  ).length;
-
-  const remaining = (await db
-    .from("articles")
-    .select("id", { count: "exact", head: true })
-    .is("image_url", null)).count ?? 0;
-
-  return NextResponse.json({ updated, total: articles.length, remaining });
+  return NextResponse.json({ updated, remaining_failed: errors, ok: true });
 }

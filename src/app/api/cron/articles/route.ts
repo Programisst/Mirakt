@@ -4,6 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import Parser from "rss-parser";
 import { uniqueSlug } from "@/lib/slugify";
 
+// Give the background pipeline the full Hobby-tier window (60s).
+export const maxDuration = 60;
+
 // ── Supabase admin (bypasses RLS for inserts) ─────────────────────────────────
 function adminDb() {
   return createClient(
@@ -167,6 +170,26 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
   }
 }
 
+// ── Image sourcing ────────────────────────────────────────────────────────────
+// Reliable professional photo from Pexels by topic keywords (free CDN, no hotlink block)
+async function pexelsImage(query: string): Promise<string> {
+  const key = process.env.PEXELS_API_KEY;
+  if (!key) return "";
+  try {
+    const res = await fetch(
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=1&orientation=landscape&size=medium`,
+      { headers: { Authorization: key }, signal: AbortSignal.timeout(6000) }
+    );
+    if (!res.ok) return "";
+    const data = await res.json();
+    const photo = data.photos?.[0];
+    return photo?.src?.large ?? photo?.src?.landscape ?? photo?.src?.medium ?? "";
+  } catch {
+    return "";
+  }
+}
+
+// AI fallback if Pexels returns nothing
 function aiImage(prompt: string): string {
   const seed = Math.floor(Math.random() * 999999);
   const encoded = encodeURIComponent(
@@ -175,30 +198,15 @@ function aiImage(prompt: string): string {
   return `https://image.pollinations.ai/prompt/${encoded}?width=800&height=500&seed=${seed}&nologo=true`;
 }
 
-// Fetch OG image from article page if RSS didn't provide one
-async function fetchOgImage(url: string): Promise<string> {
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ru-RU,ru;q=0.9",
-      },
-      signal: AbortSignal.timeout(2000),
-    });
-    const html = await res.text();
-    const m =
-      html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ??
-      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ??
-      html.match(/<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i) ??
-      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i) ??
-      html.match(/<img[^>]+class=["'][^"']*(?:article|main|hero|lead|photo)[^"']*["'][^>]+src=["']([^"']+)["']/i);
-    const src = m?.[1]?.trim() ?? "";
-    if (src && src.startsWith("http") && !src.includes("placeholder") && !src.endsWith(".svg")) return src;
-    return "";
-  } catch {
-    return "";
-  }
+// Pick the best available image for an article.
+// 1) Pexels by English keywords (reliable, professional, never blocked)
+// 2) RSS thumbnail (the real event photo, if present)
+// 3) AI generation (last resort so a card is never empty)
+async function pickImage(candidate: Candidate, keywords: string): Promise<string> {
+  const pexels = await pexelsImage(keywords);
+  if (pexels) return pexels;
+  if (candidate.thumbnail && candidate.thumbnail.startsWith("http")) return candidate.thumbnail;
+  return aiImage(keywords);
 }
 
 interface PipelineResult {
@@ -240,13 +248,20 @@ async function runPipeline(): Promise<PipelineResult> {
   const newOnes = unique.filter((c) => !existingSet.has(c.link));
 
   const categories = ["main", "world", "russia", "economy", "politics", "science", "crimea"];
-  const toProcess: Candidate[] = [];
+  const MAX_PER_CAT = 2;
+  // Round-robin: one per category first (guarantees every tab gets filled),
+  // then a second pass for extras — as many as fit in the 60s function window.
+  const perCat: Record<string, Candidate[]> = {};
   for (const cat of categories) {
-    const picks = newOnes
+    perCat[cat] = newOnes
       .filter((c) => c.category === cat)
-      .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
-      .slice(0, 1);
-    toProcess.push(...picks);
+      .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+  }
+  const toProcess: Candidate[] = [];
+  for (let i = 0; i < MAX_PER_CAT; i++) {
+    for (const cat of categories) {
+      if (perCat[cat][i]) toProcess.push(perCat[cat][i]);
+    }
   }
 
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -261,8 +276,7 @@ async function runPipeline(): Promise<PipelineResult> {
       } else if (!result.title || !result.content) {
         errors.push(`NO_CONTENT [${candidate.category}]`);
       } else {
-        const rssOrOg = candidate.thumbnail || await fetchOgImage(candidate.link);
-        const finalImage = rssOrOg || aiImage(result.image_prompt || result.title);
+        const finalImage = await pickImage(candidate, result.image_prompt || result.title);
         const slug = uniqueSlug(result.title);
         const { error } = await db.from("articles").insert({
           slug,
@@ -283,7 +297,7 @@ async function runPipeline(): Promise<PipelineResult> {
     } catch (e) {
       errors.push(`ERR [${candidate.category}]: ${String(e).slice(0, 100)}`);
     }
-    await new Promise((r) => setTimeout(r, 5000));
+    await new Promise((r) => setTimeout(r, 4000));
   }
 
   return {
