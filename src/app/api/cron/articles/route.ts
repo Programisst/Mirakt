@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createClient } from "@supabase/supabase-js";
 import Parser from "rss-parser";
 import { uniqueSlug } from "@/lib/slugify";
@@ -183,18 +184,9 @@ async function fetchOgImage(url: string): Promise<string> {
   }
 }
 
-// ── Main handler ──────────────────────────────────────────────────────────────
-export async function POST(req: NextRequest) {
-  // Auth check — optional if env var not available in Netlify runtime
-  const secret = req.nextUrl.searchParams.get("secret") ?? "";
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && secret !== cronSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+async function runPipeline() {
   const db = adminDb();
 
-  // Fetch all RSS feeds in parallel
   const feedResults = await Promise.allSettled(
     FEEDS.map((f) => fetchFeed(f.url, f.category))
   );
@@ -203,7 +195,6 @@ export async function POST(req: NextRequest) {
     .flatMap((r) => r.value)
     .filter((c) => c.title.length > 10 && c.description.length > 30);
 
-  // Deduplicate candidates by link
   const seen = new Set<string>();
   const unique = candidates.filter((c) => {
     if (seen.has(c.link)) return false;
@@ -211,7 +202,6 @@ export async function POST(req: NextRequest) {
     return true;
   });
 
-  // Find which original_urls are already in DB
   const links = unique.map((c) => c.link);
   const { data: existing } = await db
     .from("articles")
@@ -221,7 +211,6 @@ export async function POST(req: NextRequest) {
   const existingSet = new Set((existing ?? []).map((r: { original_url: string }) => r.original_url));
   const newOnes = unique.filter((c) => !existingSet.has(c.link));
 
-  // Pick up to 3 newest articles per category = up to 21 per run, all processed in parallel
   const categories = ["main", "world", "russia", "economy", "politics", "science", "crimea"];
   const toProcess: Candidate[] = [];
   for (const cat of categories) {
@@ -232,15 +221,9 @@ export async function POST(req: NextRequest) {
     toProcess.push(...picks);
   }
 
-  // Delete articles older than 7 days
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   await db.from("articles").delete().lt("published_at", cutoff);
 
-  let saved = 0;
-  let skipped = 0;
-  const errors: string[] = [];
-
-  // Sequential processing with 5s pause — stays within 12,000 TPM Groq free limit
   for (const candidate of toProcess) {
     try {
       const [result, ogImage] = await Promise.all([
@@ -250,11 +233,9 @@ export async function POST(req: NextRequest) {
 
       const finalImage = candidate.thumbnail || ogImage || null;
 
-      if (result.skip || !result.title || !result.content) {
-        skipped++;
-      } else {
+      if (!result.skip && result.title && result.content) {
         const slug = uniqueSlug(result.title);
-        const { error } = await db.from("articles").insert({
+        await db.from("articles").insert({
           slug,
           title:        result.title,
           excerpt:      result.excerpt ?? result.content.slice(0, 200),
@@ -264,21 +245,24 @@ export async function POST(req: NextRequest) {
           published_at: candidate.pubDate,
           original_url: candidate.link,
         });
-        if (error) errors.push(error.message);
-        else saved++;
       }
-    } catch (e) {
-      errors.push(String(e));
-    }
+    } catch { /* silent */ }
     await sleep(5000);
   }
+}
 
-  return NextResponse.json({
-    processed: toProcess.length,
-    saved,
-    skipped,
-    errors: errors.slice(0, 5),
-  });
+// ── Main handler ──────────────────────────────────────────────────────────────
+export async function POST(req: NextRequest) {
+  const secret = req.nextUrl.searchParams.get("secret") ?? "";
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && secret !== cronSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Respond immediately — processing continues in background (Vercel waitUntil)
+  waitUntil(runPipeline());
+
+  return NextResponse.json({ ok: true, message: "Processing started in background" });
 }
 
 // Allow GET for quick health check
