@@ -138,8 +138,8 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
 - excerpt: 2-3 предложения, краткое описание
 - content: 650-900 слов, абзацы разделены \\n\\n, деловой стиль
 - НЕ упоминай источник (РИА, ТАСС, Лента, Коммерсант и т.д.)
-- image_prompt: 6-10 слов на английском для генерации фото, реалистичный стиль, по теме статьи
-- Пропусти если: тема НЕ относится к разделу «${catName}», или содержит: секс, наркотики, ЛГБТ+, экстремизм, терроризм, дискредитация армии РФ, жестокое насилие
+- image_prompt: 6-10 слов на английском для AI генерации фото, по теме статьи
+- Пропусти ТОЛЬКО если: секс, наркотики, ЛГБТ+, экстремизм, терроризм, дискредитация армии РФ, жестокое насилие
 
 Ответ ТОЛЬКО в JSON:
 {"skip":true} — если пропустить
@@ -165,10 +165,6 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
   } catch {
     return { skip: true };
   }
-}
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 function aiImage(prompt: string): string {
@@ -238,22 +234,20 @@ async function runPipeline() {
     const picks = newOnes
       .filter((c) => c.category === cat)
       .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
-      .slice(0, 2);
+      .slice(0, 1);
     toProcess.push(...picks);
   }
 
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   await db.from("articles").delete().lt("published_at", cutoff);
 
-  for (const candidate of toProcess) {
+  // Process all in parallel — fits within Vercel hobby 10s limit and Groq 12k TPM
+  await Promise.all(toProcess.map(async (candidate) => {
     try {
       const result = await rewrite(candidate);
-
       if (!result.skip && result.title && result.content) {
-        // Image priority: RSS thumbnail → OG scrape → AI generated
         const rssOrOg = candidate.thumbnail || await fetchOgImage(candidate.link);
         const finalImage = rssOrOg || aiImage(result.image_prompt || result.title);
-
         const slug = uniqueSlug(result.title);
         await db.from("articles").insert({
           slug,
@@ -267,8 +261,7 @@ async function runPipeline() {
         });
       }
     } catch { /* silent */ }
-    await sleep(5000);
-  }
+  }));
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
