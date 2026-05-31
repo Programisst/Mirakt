@@ -1,10 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { translations, type Locale, type T } from "./i18n";
+import { createContext, useContext, useEffect } from "react";
+import { translations } from "./i18n";
 
 interface LocaleCtx {
-  locale: Locale;
+  locale: "ru";
   t: typeof translations.ru;
   toggle: () => void;
 }
@@ -16,23 +16,13 @@ const Ctx = createContext<LocaleCtx>({
 });
 
 export function LocaleProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocale] = useState<Locale>("ru");
-
   useEffect(() => {
-    const saved = localStorage.getItem("mirakt_lang") as Locale | null;
-    if (saved === "en" || saved === "ru") setLocale(saved);
-  }, []);
-
-  const toggle = useCallback(() => {
-    setLocale((prev) => {
-      const next: Locale = prev === "ru" ? "en" : "ru";
-      localStorage.setItem("mirakt_lang", next);
-      return next;
-    });
+    // clear any previously saved EN preference
+    localStorage.removeItem("mirakt_lang");
   }, []);
 
   return (
-    <Ctx.Provider value={{ locale, t: translations[locale], toggle }}>
+    <Ctx.Provider value={{ locale: "ru", t: translations.ru, toggle: () => {} }}>
       {children}
     </Ctx.Provider>
   );

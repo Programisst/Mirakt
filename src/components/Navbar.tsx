@@ -97,7 +97,7 @@ export function Navbar({
   prices, query, onQueryChange, user, showMenu, setShowMenu,
   menuRef, onOpenAuth, onLogout, activeCategory, onSelectCategory, categoryCache,
 }: NavbarProps) {
-  const { locale, t, toggle } = useLocale();
+  const { t } = useLocale();
 
   return (
     <>
@@ -129,21 +129,8 @@ export function Navbar({
               onBlur={(e)  => (e.target.style.borderColor = "rgba(255,255,255,0.1)")} />
           </div>
 
-          {/* Правая часть: язык + пользователь */}
+          {/* Правая часть: пользователь */}
           <div className="flex items-center gap-2">
-            {/* Кнопка смены языка */}
-            <button onClick={toggle}
-              className="text-[10px] font-bold tracking-widest px-2.5 py-1 rounded-full transition-all"
-              style={{
-                border: "1px solid rgba(212,175,55,0.3)",
-                color: GOLD,
-                background: "rgba(212,175,55,0.06)",
-                letterSpacing: "0.1em",
-              }}
-              title={locale === "ru" ? "Switch to English" : "Switch to Russian"}>
-              {locale === "ru" ? "EN" : "RU"}
-            </button>
-
             {/* Пользователь */}
             <div className="relative" ref={menuRef}>
               {user ? (

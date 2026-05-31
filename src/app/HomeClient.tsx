@@ -1238,7 +1238,22 @@ export function HomeClient() {
                 <Link href="/admin" className="hover:text-white/50 transition-colors">АДМИНКА</Link>
               )}
             </div>
-            <span className="text-[9px] tracking-widest text-white/10">© 2026 MIRAKT</span>
+            <div className="flex items-center gap-3">
+              <a
+                href="https://t.me/mirakt_ru"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Telegram"
+                style={{ color: "rgba(212,175,55,0.45)", transition: "color 0.2s" }}
+                onMouseEnter={e => (e.currentTarget.style.color = "rgba(212,175,55,0.9)")}
+                onMouseLeave={e => (e.currentTarget.style.color = "rgba(212,175,55,0.45)")}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.32 14.617l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.828.942z"/>
+                </svg>
+              </a>
+              <span className="text-[9px] tracking-widest text-white/10">© 2026 MIRAKT</span>
+            </div>
           </div>
         </footer>
       </div>
