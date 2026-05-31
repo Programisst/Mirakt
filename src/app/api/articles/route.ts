@@ -30,17 +30,36 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data ?? [], { headers: { "Cache-Control": "no-store" } });
   }
 
-  let query = db
+  // "Главное": берём топ-4 из каждой категории, перемешиваем по дате
+  // Так на главной всегда равный представитель каждого раздела
+  if (category === "main") {
+    const CATS = ["world", "russia", "crimea", "economy", "science", "politics"];
+    const PER_CAT = 4;
+    const results = await Promise.all(
+      CATS.map((cat) =>
+        db
+          .from("articles")
+          .select("id,slug,title,excerpt,image_url,category,published_at")
+          .eq("category", cat)
+          .order("published_at", { ascending: false })
+          .limit(PER_CAT)
+      )
+    );
+    const combined = results
+      .flatMap((r) => r.data ?? [])
+      .sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
+    return NextResponse.json(combined, {
+      headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=120" },
+    });
+  }
+
+  const { data, error } = await db
     .from("articles")
     .select("id,slug,title,excerpt,image_url,category,published_at")
+    .eq("category", category)
     .order("published_at", { ascending: false })
     .range(page * limit, (page + 1) * limit - 1);
 
-  if (category !== "main") {
-    query = query.eq("category", category);
-  }
-
-  const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json(data ?? [], {
