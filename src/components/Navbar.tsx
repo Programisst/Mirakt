@@ -119,14 +119,27 @@ export function Navbar({
 
           {/* Поиск */}
           <div className="flex justify-center">
-            <input type="search"
-              placeholder={t.search}
-              value={query}
-              onChange={(e) => onQueryChange(e.target.value)}
-              className="w-full max-w-md h-9 rounded-full px-5 text-[13px] text-white/80 placeholder-white/25 outline-none"
-              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(14px)", transition: "border-color 200ms" }}
-              onFocus={(e) => (e.target.style.borderColor = "rgba(212,175,55,0.45)")}
-              onBlur={(e)  => (e.target.style.borderColor = "rgba(255,255,255,0.1)")} />
+            <div className="relative w-full max-w-md">
+              <input type="text"
+                placeholder={t.search}
+                value={query}
+                onChange={(e) => onQueryChange(e.target.value)}
+                className="w-full h-9 rounded-full px-5 pr-9 text-[13px] text-white/80 placeholder-white/25 outline-none"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(14px)", transition: "border-color 200ms" }}
+                onFocus={(e) => (e.target.style.borderColor = "rgba(212,175,55,0.45)")}
+                onBlur={(e)  => (e.target.style.borderColor = "rgba(255,255,255,0.1)")} />
+              {query && (
+                <button
+                  onClick={() => onQueryChange("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-4 h-4 rounded-full transition-opacity hover:opacity-100"
+                  style={{ color: "rgba(212,175,55,0.6)", opacity: 0.7 }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/>
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Правая часть: пользователь */}

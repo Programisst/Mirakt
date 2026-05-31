@@ -1046,7 +1046,7 @@ export function HomeClient() {
       try {
         const res = await fetch(`/api/articles?search=${encodeURIComponent(q)}`);
         const data = await res.json();
-        setSearchResults(Array.isArray(data) ? data : []);
+        setSearchResults(Array.isArray(data) ? data.map(mirakcToNewsItem) : []);
       } catch { setSearchResults([]); }
       finally { setSearchBusy(false); }
     }, 350);
