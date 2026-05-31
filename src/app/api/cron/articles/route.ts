@@ -15,13 +15,13 @@ function adminDb() {
 }
 
 // ── RSS feeds per category ────────────────────────────────────────────────────
-// Each category has its OWN dedicated feeds (no feed shared between categories)
-// so a story lands in exactly one tab. Crimea gets two sources for coverage.
+// Each category has its OWN dedicated section feed (NO shared general feed —
+// a general feed like lenta/news or tass/v2 would steal russia/world stories
+// into "main", which is why those tabs looked empty or duplicated).
 const FEEDS: { url: string; category: string }[] = [
   { url: "https://crimea.ria.ru/export/rss2/index.xml",        category: "crimea" },
   { url: "https://ria.ru/export/rss2/index.xml",               category: "main" },
   { url: "https://lenta.ru/rss/news/world",                    category: "world" },
-  { url: "https://tass.ru/rss/v2.xml",                         category: "world" },
   { url: "https://lenta.ru/rss/news/russia",                   category: "russia" },
   { url: "https://www.vedomosti.ru/rss/rubric/economics",      category: "economy" },
   { url: "https://lenta.ru/rss/news/economics",                category: "economy" },
@@ -138,7 +138,7 @@ async function callGroq(candidate: Candidate): Promise<Rewritten> {
 - excerpt: 2-3 предложения, краткое описание
 - content: 350-500 слов, абзацы разделены \\n\\n, деловой стиль
 - НЕ упоминай источник (РИА, ТАСС, Лента, Коммерсант и т.д.)
-- image_prompt: 6-10 слов на английском для AI генерации фото, по теме статьи
+- image_prompt: 3-6 английских слов — КОНКРЕТНЫЙ видимый объект/сцена по теме (например "oil refinery pipeline", "russian parliament building", "wheat harvest field"), НЕ абстракции типа "economy" или "rational shopping"
 - Пропусти ТОЛЬКО если: секс, наркотики, ЛГБТ+, экстремизм, терроризм, дискредитация армии РФ, жестокое насилие
 
 Верни СТРОГО валидный JSON, обязательно закрой все кавычки и скобки:
@@ -175,19 +175,28 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
 }
 
 // ── Image sourcing ────────────────────────────────────────────────────────────
-// Reliable professional photo from Pexels by topic keywords (free CDN, no hotlink block)
-async function pexelsImage(query: string): Promise<string> {
+// Reliable professional photo from Pexels by topic keywords (free CDN, no hotlink
+// block). Fetches several results and returns the first NOT already used this run
+// (and not in DB), so two articles never get the same stock photo.
+async function pexelsImage(query: string, avoid: Set<string>): Promise<string> {
   const key = process.env.PEXELS_API_KEY;
-  if (!key) return "";
+  if (!key || !query) return "";
   try {
     const res = await fetch(
-      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=1&orientation=landscape&size=medium`,
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=15&orientation=landscape&size=medium`,
       { headers: { Authorization: key }, signal: AbortSignal.timeout(6000) }
     );
     if (!res.ok) return "";
     const data = await res.json();
-    const photo = data.photos?.[0];
-    return photo?.src?.large ?? photo?.src?.landscape ?? photo?.src?.medium ?? "";
+    const photos: Array<{ src?: Record<string, string> }> = data.photos ?? [];
+    let firstAvailable = "";
+    for (const p of photos) {
+      const url = p.src?.large ?? p.src?.landscape ?? p.src?.medium ?? "";
+      if (!url) continue;
+      if (!firstAvailable) firstAvailable = url;
+      if (!avoid.has(url)) return url;
+    }
+    return firstAvailable; // all 15 already used — reuse the top one rather than nothing
   } catch {
     return "";
   }
@@ -203,12 +212,12 @@ function aiImage(prompt: string): string {
 }
 
 // Pick the best available image for an article.
-// 1) Pexels by English keywords (reliable, professional, never blocked)
+// 1) Pexels by English keywords (reliable, professional, de-duplicated)
 // 2) RSS thumbnail (the real event photo, if present)
 // 3) AI generation (last resort so a card is never empty)
-async function pickImage(candidate: Candidate, keywords: string): Promise<string> {
-  const pexels = await pexelsImage(keywords);
-  if (pexels) return pexels;
+async function pickImage(candidate: Candidate, keywords: string, avoid: Set<string>): Promise<string> {
+  const pexels = await pexelsImage(keywords, avoid);
+  if (pexels) { avoid.add(pexels); return pexels; }
   if (candidate.thumbnail && candidate.thumbnail.startsWith("http")) return candidate.thumbnail;
   return aiImage(keywords);
 }
@@ -279,6 +288,12 @@ async function runPipeline(): Promise<PipelineResult> {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   await db.from("articles").delete().lt("published_at", cutoff);
 
+  // Collect images already in the DB so we never reuse the same stock photo.
+  const { data: imgRows } = await db.from("articles").select("image_url").limit(1000);
+  const usedImages = new Set<string>(
+    (imgRows ?? []).map((r: { image_url: string | null }) => r.image_url ?? "").filter(Boolean)
+  );
+
   const startTime = Date.now();
   let saved = 0;
   for (const candidate of toProcess) {
@@ -294,7 +309,7 @@ async function runPipeline(): Promise<PipelineResult> {
       } else if (!result.title || !result.content) {
         errors.push(`NO_CONTENT [${candidate.category}]`);
       } else {
-        const finalImage = await pickImage(candidate, result.image_prompt || result.title);
+        const finalImage = await pickImage(candidate, result.image_prompt || result.title, usedImages);
         const slug = uniqueSlug(result.title);
         const { error } = await db.from("articles").insert({
           slug,
