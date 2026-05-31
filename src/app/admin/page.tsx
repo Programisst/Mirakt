@@ -185,8 +185,6 @@ function AnalyticsTab() {
   const [banningId, setBanningId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [userQuery, setUserQuery] = useState("");
-  const [aStats, setAStats] = useState<{ total_published: number; live_total: number; per_category: Record<string, number> } | null>(null);
-
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/analytics", { headers: { "x-admin-auth": getToken() } });
@@ -195,13 +193,6 @@ function AnalyticsTab() {
   }, []);
 
   useEffect(() => { load(); const t = setInterval(load, 30_000); return () => clearInterval(t); }, [load]);
-
-  useEffect(() => {
-    fetch("/api/admin/stats", { headers: { "x-admin-auth": getToken() } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setAStats(d))
-      .catch(() => {});
-  }, []);
 
   const loadUsers = useCallback(async () => {
     const res = await fetch("/api/admin/users", { headers: { "x-admin-auth": getToken() } });
@@ -335,14 +326,6 @@ function AnalyticsTab() {
         <StatCard label="Онлайн сейчас" value={raw?.onlineNow ?? 0} sub="за последние 5 мин" />
         <StatCard label="Посетителей" value={stats.uniqueIPs} sub={`за ${PERIODS[period].label}`} />
         <StatCard label="Среднее время" value={stats.avgDuration > 0 ? stats.fmtDuration(stats.avgDuration) : "—"} sub="на сайте" />
-      </div>
-
-      {/* Карточки: статьи Mirakt */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Статей опубликовано" value={aStats?.total_published ?? "—"} sub="за всё время" />
-        <StatCard label="Статей на сайте" value={aStats?.live_total ?? "—"} sub="сейчас (7 дней)" />
-        <StatCard label="Крым" value={aStats?.per_category?.crimea ?? "—"} sub="сейчас" />
-        <StatCard label="Политика" value={aStats?.per_category?.politics ?? "—"} sub="сейчас" />
       </div>
 
       {/* Карточки: источники */}
@@ -693,7 +676,12 @@ function NewsTab() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Всего опубликовано" value={aStats?.total_published ?? "—"} sub="за всё время" />
         <StatCard label="Сейчас на сайте" value={aStats?.live_total ?? "—"} sub="за 7 дней" />
+        <StatCard label="Главное" value={aStats?.per_category?.main ?? "—"} sub="сейчас" />
+        <StatCard label="Мир" value={aStats?.per_category?.world ?? "—"} sub="сейчас" />
+        <StatCard label="Россия" value={aStats?.per_category?.russia ?? "—"} sub="сейчас" />
         <StatCard label="Крым" value={aStats?.per_category?.crimea ?? "—"} sub="сейчас" />
+        <StatCard label="Экономика" value={aStats?.per_category?.economy ?? "—"} sub="сейчас" />
+        <StatCard label="Наука" value={aStats?.per_category?.science ?? "—"} sub="сейчас" />
         <StatCard label="Политика" value={aStats?.per_category?.politics ?? "—"} sub="сейчас" />
       </div>
 
