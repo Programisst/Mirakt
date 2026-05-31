@@ -27,9 +27,10 @@ const FEEDS: { url: string; category: string }[] = [
   { url: "https://lenta.ru/rss/news/world",                    category: "world" },
   // Russia
   { url: "https://lenta.ru/rss/news/russia",                   category: "russia" },
-  // Economy
+  // Economy — more sources so the tab fills like the others
   { url: "https://www.vedomosti.ru/rss/rubric/economics",      category: "economy" },
   { url: "https://lenta.ru/rss/news/economics",                category: "economy" },
+  { url: "https://www.gazeta.ru/export/rss/business.xml",      category: "economy" },
   // Politics — more sources so the tab stays full
   { url: "https://www.vedomosti.ru/rss/rubric/politics",       category: "politics" },
   { url: "https://www.gazeta.ru/export/rss/politics.xml",      category: "politics" },
@@ -276,21 +277,39 @@ async function runPipeline(): Promise<PipelineResult> {
     .flatMap((r) => r.value)
     .filter((c) => c.title.length > 10 && c.description.length > 30);
 
-  // We only use the feed tag to balance how many we pick per feed; the REAL
-  // category for each saved article is decided by the AI (see callGroq) per story.
-  // Dedup by link AND by a normalized title key (first 6 significant words) so the
-  // same event reported by two agencies doesn't show up twice across tabs.
+  // Drop boring / low-value filler so only genuinely interesting news gets through.
+  const BORING_RE = /гороскоп|знак[аи]? зодиак|астролог|нумеролог|погода на|прогноз погод|курс валют на|курсы валют|именинник|какой сегодня праздник|что приготовить|рецепт|кроссворд|анекдот|гадани|таро|сонник|лунн[ыеа] календар|во сколько|когда отдыхаем|выходные дни/i;
+  const filtered = candidates.filter((c) => !BORING_RE.test(`${c.title} ${c.description}`));
+
+  // "Hotness": if several feeds report the same story, it's a top story. Count how
+  // many candidates share a normalized title key, then rank by that coverage.
   const titleKey = (t: string) =>
     t.toLowerCase().replace(/[^a-zа-яё0-9 ]/gi, " ").split(/\s+/).filter(Boolean).slice(0, 6).join(" ");
+  const coverage = new Map<string, number>();
+  for (const c of filtered) {
+    const tk = titleKey(c.title);
+    coverage.set(tk, (coverage.get(tk) ?? 0) + 1);
+  }
+
+  // Dedup by link AND by normalized title key so the same event isn't saved twice.
   const seenLink = new Set<string>();
   const seenTitle = new Set<string>();
-  const unique = candidates.filter((c) => {
+  const unique = filtered.filter((c) => {
     const tk = titleKey(c.title);
     if (seenLink.has(c.link) || seenTitle.has(tk)) return false;
     seenLink.add(c.link);
     seenTitle.add(tk);
     return true;
   });
+
+  // Score = coverage (how many agencies cover it) + freshness bonus (last 6h).
+  const now = Date.now();
+  const score = (c: Candidate) => {
+    const cov = coverage.get(titleKey(c.title)) ?? 1;
+    const ageH = (now - new Date(c.pubDate).getTime()) / 3_600_000;
+    const freshBonus = ageH < 6 ? 2 : ageH < 24 ? 1 : 0;
+    return cov * 3 + freshBonus;
+  };
 
   const links = unique.map((c) => c.link);
   const { data: existing } = await db
@@ -301,16 +320,16 @@ async function runPipeline(): Promise<PipelineResult> {
   const existingSet = new Set((existing ?? []).map((r: { original_url: string }) => r.original_url));
   const newOnes = unique.filter((c) => !existingSet.has(c.link));
 
-  // Crimea leads (user's priority tab); main holds general top-news that didn't
-  // fit any specific section. Every article is in exactly one tab — no overlap.
-  // Balance candidates across feed topics (crimea leads). The AI assigns the final
-  // tab per story, so this only ensures we don't feed Groq 7 economy items at once.
+  // Balance candidates across feed topics so every tab fills evenly. Within each
+  // topic, pick the HOTTEST stories first (covered by many agencies + freshest),
+  // not just newest — that's what makes the feed feel top-tier. The AI assigns the
+  // final tab per story; this only keeps Groq from getting 7 economy items at once.
   const feedTopics = ["crimea", "world", "russia", "economy", "politics", "science"];
   const perCat: Record<string, Candidate[]> = {};
   for (const cat of feedTopics) {
     perCat[cat] = newOnes
       .filter((c) => c.category === cat)
-      .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+      .sort((a, b) => score(b) - score(a));
   }
   const queue: Candidate[] = [];
   for (let i = 0; i < 2; i++) {
@@ -379,6 +398,15 @@ async function runPipeline(): Promise<PipelineResult> {
       errors.push(`ERR [${candidate.category}]: ${String(e).slice(0, 100)}`);
     }
     await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  // All-time published counter (survives the 7-day cleanup of the articles table).
+  if (saved > 0) {
+    try {
+      const { data: row } = await db.from("stats").select("value").eq("key", "total_published").maybeSingle();
+      const current = (row?.value as number) ?? 0;
+      await db.from("stats").upsert({ key: "total_published", value: current + saved });
+    } catch { /* stats table optional — never block the pipeline */ }
   }
 
   return {

@@ -583,6 +583,12 @@ function ImageUploader({ value, onChange }: { value: string; onChange: (url: str
 // ─── Вкладка: Новости ─────────────────────────────────────────────────────────
 const EMPTY = { title: "", subtitle: "", category: "main", content: "", image_url: "" };
 
+type ArticleStats = {
+  total_published: number;
+  live_total: number;
+  per_category: Record<string, number>;
+};
+
 function NewsTab() {
   const [news, setNews]           = useState<NewsItem[]>([]);
   const [form, setForm]           = useState(EMPTY);
@@ -593,6 +599,7 @@ function NewsTab() {
   const [showAllNews, setShowAllNews] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg]     = useState("");
+  const [aStats, setAStats]         = useState<ArticleStats | null>(null);
 
   const loadNews = useCallback(async () => {
     const res = await fetch("/api/admin/news", { headers: { "x-admin-auth": getToken() } });
@@ -601,7 +608,14 @@ function NewsTab() {
     else setErrorMsg(`Ошибка загрузки: ${data?.error ?? res.status}`);
   }, []);
 
-  useEffect(() => { loadNews(); }, [loadNews]);
+  const loadStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/stats", { headers: { "x-admin-auth": getToken() } });
+      if (res.ok) setAStats(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { loadNews(); loadStats(); }, [loadNews, loadStats]);
 
   function set(key: keyof typeof EMPTY) {
     return (v: string) => setForm((f) => ({ ...f, [key]: v }));
@@ -659,6 +673,14 @@ function NewsTab() {
 
   return (
     <div className="space-y-6">
+      {/* Статистика статей */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard label="Всего опубликовано" value={aStats?.total_published ?? "—"} sub="за всё время" />
+        <StatCard label="Сейчас на сайте" value={aStats?.live_total ?? "—"} sub="за 7 дней" />
+        <StatCard label="Крым" value={aStats?.per_category?.crimea ?? "—"} sub="сейчас" />
+        <StatCard label="Политика" value={aStats?.per_category?.politics ?? "—"} sub="сейчас" />
+      </div>
+
       {/* Форма */}
       <div className="rounded-2xl p-6"
         style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(212,175,55,0.1)" }}>
