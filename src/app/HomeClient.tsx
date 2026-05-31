@@ -840,6 +840,8 @@ export function HomeClient() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [poolLen, setPoolLen]           = useState(0);
   const [query, setQuery]           = useState("");
+  const [searchResults, setSearchResults] = useState<NewsItem[] | null>(null);
+  const [searchBusy, setSearchBusy] = useState(false);
   const [prices, setPrices]         = useState<CurrencyRates | null>(null);
   const [freshCount, setFreshCount] = useState(0);
 
@@ -1035,14 +1037,24 @@ export function HomeClient() {
     setShowMenu(false);
   }, []);
 
-  const hasMore = visibleCount < poolLen && !query.trim();
+  // ── Search: debounce → hit API for full 7-day results ─────────────────────
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) { setSearchResults(null); return; }
+    const timer = setTimeout(async () => {
+      setSearchBusy(true);
+      try {
+        const res = await fetch(`/api/articles?search=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        setSearchResults(Array.isArray(data) ? data : []);
+      } catch { setSearchResults([]); }
+      finally { setSearchBusy(false); }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [query]);
 
-  const filtered = query.trim()
-    ? news.filter((i) =>
-        i.title.toLowerCase().includes(query.toLowerCase()) ||
-        i.description.toLowerCase().includes(query.toLowerCase())
-      )
-    : news;
+  const hasMore = visibleCount < poolLen && !query.trim();
+  const filtered = searchResults ?? news;
 
   const catLabel = t[`cat_${activeCategory}` as keyof typeof t] as string;
 
@@ -1148,14 +1160,20 @@ export function HomeClient() {
             </div>
           )}
 
-          {!loading && !fetchError && filtered.length === 0 && news.length > 0 && (
-            <div className="flex flex-col items-center justify-center py-24 text-white/15">
-              <span className="text-4xl mb-4">◈</span>
-              <p className="text-[10px] tracking-[0.3em]">{t.not_found}</p>
+          {searchBusy && (
+            <div className="flex justify-center py-16">
+              <span className="text-[10px] tracking-[0.3em] text-white/20 animate-pulse">ПОИСК...</span>
             </div>
           )}
 
-          {filtered.length > 0 && (() => {
+          {!searchBusy && !loading && !fetchError && filtered.length === 0 && (query.trim() || news.length > 0) && (
+            <div className="flex flex-col items-center justify-center py-24 text-white/15">
+              <span className="text-4xl mb-4">◈</span>
+              <p className="text-[10px] tracking-[0.3em]">{query.trim() ? "НИЧЕГО НЕ НАЙДЕНО" : t.not_found}</p>
+            </div>
+          )}
+
+          {!searchBusy && filtered.length > 0 && (() => {
             const { mainNews, sideNews, otherNews } = query.trim()
               ? { mainNews: null, sideNews: [], otherNews: filtered }
               : processNews(filtered);
@@ -1238,19 +1256,21 @@ export function HomeClient() {
                 <Link href="/admin" className="hover:text-white/50 transition-colors">АДМИНКА</Link>
               )}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               <a
                 href="https://t.me/mirakt_ru"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Telegram"
-                style={{ color: "rgba(212,175,55,0.45)", transition: "color 0.2s" }}
-                onMouseEnter={e => (e.currentTarget.style.color = "rgba(212,175,55,0.9)")}
-                onMouseLeave={e => (e.currentTarget.style.color = "rgba(212,175,55,0.45)")}
+                className="flex items-center gap-2"
+                style={{ color: "rgba(212,175,55,0.5)", transition: "color 0.2s", textDecoration: "none" }}
+                onMouseEnter={e => (e.currentTarget.style.color = "rgba(212,175,55,1)")}
+                onMouseLeave={e => (e.currentTarget.style.color = "rgba(212,175,55,0.5)")}
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.32 14.617l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.828.942z"/>
                 </svg>
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em" }}>@mirakt_ru</span>
               </a>
               <span className="text-[9px] tracking-widest text-white/10">© 2026 MIRAKT</span>
             </div>
