@@ -676,7 +676,7 @@ function NewsTab() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Всего опубликовано" value={aStats?.total_published ?? "—"} sub="за всё время" />
         <StatCard label="Сейчас на сайте" value={aStats?.live_total ?? "—"} sub="за 7 дней" />
-        <StatCard label="Главное" value={aStats?.per_category?.main ?? "—"} sub="сейчас" />
+        <StatCard label="Главное" value={aStats?.live_total ?? "—"} sub="все статьи" />
         <StatCard label="Мир" value={aStats?.per_category?.world ?? "—"} sub="сейчас" />
         <StatCard label="Россия" value={aStats?.per_category?.russia ?? "—"} sub="сейчас" />
         <StatCard label="Крым" value={aStats?.per_category?.crimea ?? "—"} sub="сейчас" />
