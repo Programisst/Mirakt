@@ -19,12 +19,22 @@ function adminDb() {
 // The REAL category of each saved article is decided by the AI per story (callGroq),
 // so a misfiled RSS item still lands in the correct tab.
 const FEEDS: { url: string; category: string }[] = [
+  // Crimea — multiple live regional sources so the AI has plenty to read
   { url: "https://crimea.ria.ru/export/rss2/index.xml",        category: "crimea" },
+  { url: "https://crimea-news.com/rss.xml",                    category: "crimea" },
+  { url: "https://kafanews.com/rss",                           category: "crimea" },
+  // World
   { url: "https://lenta.ru/rss/news/world",                    category: "world" },
+  // Russia
   { url: "https://lenta.ru/rss/news/russia",                   category: "russia" },
+  // Economy
   { url: "https://www.vedomosti.ru/rss/rubric/economics",      category: "economy" },
   { url: "https://lenta.ru/rss/news/economics",                category: "economy" },
+  // Politics — more sources so the tab stays full
   { url: "https://www.vedomosti.ru/rss/rubric/politics",       category: "politics" },
+  { url: "https://www.gazeta.ru/export/rss/politics.xml",      category: "politics" },
+  { url: "https://tass.ru/rss/v2.xml",                         category: "politics" },
+  // Science
   { url: "https://lenta.ru/rss/news/science",                  category: "science" },
   { url: "https://nplus1.ru/rss",                              category: "science" },
 ];
@@ -335,12 +345,16 @@ async function runPipeline(): Promise<PipelineResult> {
       } else if (!result.title || !result.content) {
         errors.push(`NO_CONTENT [${candidate.category}]`);
       } else {
-        // Trust the AI's category choice; fall back to the feed tag if invalid.
-        // Crimea wins if the text clearly mentions Crimea (AI sometimes says russia).
+        // Trust the curated section feed for the tab — each feed is topic-accurate
+        // (vedomosti/politics = политика, lenta/world = мир, etc.), so every tab
+        // fills reliably from its own feed. The AI category is only a fallback.
+        // Crimea override: anything clearly mentioning Crimea goes to Crimea; and
+        // crimea-feed fluff that ISN'T about Crimea (Sochi, Turkey) falls back to AI.
         const text = `${candidate.title} ${candidate.description}`;
-        let category = VALID_CATS.includes(result.category ?? "")
-          ? result.category!
-          : candidate.category;
+        let category = candidate.category;
+        if (category === "crimea" && !CRIMEA_RE.test(text)) {
+          category = VALID_CATS.includes(result.category ?? "") ? result.category! : "russia";
+        }
         if (CRIMEA_RE.test(text)) category = "crimea";
 
         const finalImage = await pickImage(candidate, result.image_prompt || result.title, usedImages);
