@@ -14,13 +14,12 @@ function adminDb() {
   );
 }
 
-// ── RSS feeds per category ────────────────────────────────────────────────────
-// Each category pulls from its own section feed. "main" pulls the general top-news
-// feed; any of its items that actually belong to a specific section get reclassified
-// (see classifyMain below), so every article lands in EXACTLY one tab — no overlap.
+// ── RSS feeds ─────────────────────────────────────────────────────────────────
+// The feed tag is only a HINT for balancing how many candidates we take per topic.
+// The REAL category of each saved article is decided by the AI per story (callGroq),
+// so a misfiled RSS item still lands in the correct tab.
 const FEEDS: { url: string; category: string }[] = [
   { url: "https://crimea.ria.ru/export/rss2/index.xml",        category: "crimea" },
-  { url: "https://lenta.ru/rss/news",                          category: "main" },
   { url: "https://lenta.ru/rss/news/world",                    category: "world" },
   { url: "https://lenta.ru/rss/news/russia",                   category: "russia" },
   { url: "https://www.vedomosti.ru/rss/rubric/economics",      category: "economy" },
@@ -29,23 +28,6 @@ const FEEDS: { url: string; category: string }[] = [
   { url: "https://lenta.ru/rss/news/science",                  category: "science" },
   { url: "https://nplus1.ru/rss",                              category: "science" },
 ];
-
-// Keyword routing for items coming from the general "main" feed, so a Russia/world/
-// economy story doesn't sit in "main" duplicating what its own tab would show.
-const ROUTE: { cat: string; re: RegExp }[] = [
-  { cat: "economy",  re: /эконом|финанс|рубл|доллар|евро|валют|инфляц|бирж|акци|нефт|газ|банк|ввп|бюджет|налог|санкци|рынок|цен[ыа]|тариф/i },
-  { cat: "science",  re: /наук|учен|исследован|космос|спутник|технолог|нейросет|робот|физик|хими|биолог|медицин|вакцин|климат|телескоп|марс/i },
-  { cat: "politics", re: /политик|госдум|депутат|парламент|выбор|закон|министр|кремл|путин|мишустин|лавров|санкци|переговор|саммит|нато|оон/i },
-  { cat: "world",    re: /сша|украин|киев|китай|европ|герман|франц|британ|израил|иран|япон|нато|оон|евросоюз|зарубеж|международн/i },
-  { cat: "russia",   re: /росси|москв|петербург|губернатор|област|край|республик|сибир|урал|кавказ|поволж|минобороны|мвд/i },
-];
-
-function classifyMain(text: string): string {
-  for (const { cat, re } of ROUTE) {
-    if (re.test(text)) return cat;
-  }
-  return "main";
-}
 
 // ── Candidate article ─────────────────────────────────────────────────────────
 interface Candidate {
@@ -129,10 +111,12 @@ interface Rewritten {
   excerpt?: string;
   content?: string;
   image_prompt?: string;
+  category?: string;   // chosen by the AI from the 6 real sections
 }
 
+const VALID_CATS = ["world", "russia", "crimea", "economy", "science", "politics"];
+
 async function callGroq(candidate: Candidate): Promise<Rewritten> {
-  const catName = CAT_NAMES[candidate.category] ?? candidate.category;
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -147,7 +131,7 @@ async function callGroq(candidate: Candidate): Promise<Rewritten> {
       messages: [
         {
           role: "system",
-          content: `Ты редактор новостного портала Mirakt. Раздел: «${catName}».
+          content: `Ты редактор новостного портала Mirakt.
 
 Правила:
 - Только русский язык
@@ -155,12 +139,19 @@ async function callGroq(candidate: Candidate): Promise<Rewritten> {
 - excerpt: 2-3 предложения, краткое описание
 - content: 350-500 слов, абзацы разделены \\n\\n, деловой стиль
 - НЕ упоминай источник (РИА, ТАСС, Лента, Коммерсант и т.д.)
-- image_prompt: 3-6 английских слов — КОНКРЕТНЫЙ видимый объект/сцена по теме (например "oil refinery pipeline", "russian parliament building", "wheat harvest field"), НЕ абстракции типа "economy" или "rational shopping"
+- image_prompt: 3-6 английских слов — КОНКРЕТНЫЙ видимый объект/сцена по теме (например "oil refinery pipeline", "russian parliament building", "wheat harvest field"), НЕ абстракции типа "economy"
+- category: ОПРЕДЕЛИ раздел по смыслу новости, строго одно из:
+  "crimea" — про Крым/Севастополь и крымские города
+  "world" — про другие страны, международные отношения (США, Украина, Турция, Китай, ЕС...)
+  "russia" — события внутри России (регионы, происшествия, общество)
+  "economy" — экономика, финансы, бизнес, рубль, нефть, газ, рынки
+  "science" — наука, технологии, космос, медицина, здоровье, природа
+  "politics" — политика, власть, законы, выборы, армия, дипломатия РФ
 - Пропусти ТОЛЬКО если: секс, наркотики, ЛГБТ+, экстремизм, терроризм, дискредитация армии РФ, жестокое насилие
 
 Верни СТРОГО валидный JSON, обязательно закрой все кавычки и скобки:
 {"skip":true} — если пропустить
-{"skip":false,"title":"...","excerpt":"...","content":"...","image_prompt":"..."}`,
+{"skip":false,"title":"...","excerpt":"...","content":"...","image_prompt":"...","category":"..."}`,
         },
         {
           role: "user",
@@ -261,6 +252,8 @@ interface PipelineResult {
   errors: string[];
 }
 
+const CRIMEA_RE = /крым|севастопол|симферопол|керч|ялт|евпатор|феодос|джанкой|алушт|бахчисара/i;
+
 async function runPipeline(): Promise<PipelineResult> {
   const db = adminDb();
   const errors: string[] = [];
@@ -273,17 +266,8 @@ async function runPipeline(): Promise<PipelineResult> {
     .flatMap((r) => r.value)
     .filter((c) => c.title.length > 10 && c.description.length > 30);
 
-  // Route Crimea stories precisely. The crimea.ria feed mixes in touristy/off-region
-  // items (Sochi, Turkey...) — keep something in Crimea ONLY if it really mentions
-  // the region; otherwise move it to Russia so it's not lost.
-  const CRIMEA_RE = /крым|севастопол|симферопол|керч|ялт|евпатор|феодос|джанкой|алушт|бахчисара/i;
-  for (const c of candidates) {
-    const text = `${c.title} ${c.description}`;
-    if (CRIMEA_RE.test(text)) { c.category = "crimea"; continue; }
-    if (c.category === "crimea") c.category = "russia";       // crimea feed fluff → russia
-    if (c.category === "main") c.category = classifyMain(text); // keep main clean
-  }
-
+  // We only use the feed tag to balance how many we pick per feed; the REAL
+  // category for each saved article is decided by the AI (see callGroq) per story.
   // Dedup by link AND by a normalized title key (first 6 significant words) so the
   // same event reported by two agencies doesn't show up twice across tabs.
   const titleKey = (t: string) =>
@@ -309,22 +293,22 @@ async function runPipeline(): Promise<PipelineResult> {
 
   // Crimea leads (user's priority tab); main holds general top-news that didn't
   // fit any specific section. Every article is in exactly one tab — no overlap.
-  const categories = ["crimea", "main", "world", "russia", "economy", "politics", "science"];
+  // Balance candidates across feed topics (crimea leads). The AI assigns the final
+  // tab per story, so this only ensures we don't feed Groq 7 economy items at once.
+  const feedTopics = ["crimea", "world", "russia", "economy", "politics", "science"];
   const perCat: Record<string, Candidate[]> = {};
-  for (const cat of categories) {
+  for (const cat of feedTopics) {
     perCat[cat] = newOnes
       .filter((c) => c.category === cat)
       .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
   }
-  // Round-robin: one per category each pass (crimea leads) so EVERY tab gets a
-  // fresh article each run. The 26s time budget below caps how many actually run.
   const queue: Candidate[] = [];
   for (let i = 0; i < 2; i++) {
-    for (const cat of categories) {
+    for (const cat of feedTopics) {
       if (perCat[cat][i]) queue.push(perCat[cat][i]);
     }
   }
-  // 7 per run = one per category, fits inside 8b-instant's per-minute token limit.
+  // 7 per run fits inside 8b-instant's per-minute token limit and the 30s timeout.
   const toProcess = queue.slice(0, 7);
 
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -351,6 +335,14 @@ async function runPipeline(): Promise<PipelineResult> {
       } else if (!result.title || !result.content) {
         errors.push(`NO_CONTENT [${candidate.category}]`);
       } else {
+        // Trust the AI's category choice; fall back to the feed tag if invalid.
+        // Crimea wins if the text clearly mentions Crimea (AI sometimes says russia).
+        const text = `${candidate.title} ${candidate.description}`;
+        let category = VALID_CATS.includes(result.category ?? "")
+          ? result.category!
+          : candidate.category;
+        if (CRIMEA_RE.test(text)) category = "crimea";
+
         const finalImage = await pickImage(candidate, result.image_prompt || result.title, usedImages);
         const slug = uniqueSlug(result.title);
         const { error } = await db.from("articles").insert({
@@ -359,7 +351,7 @@ async function runPipeline(): Promise<PipelineResult> {
           excerpt:      result.excerpt ?? result.content.slice(0, 200),
           content:      result.content,
           image_url:    finalImage,
-          category:     candidate.category,
+          category,
           published_at: candidate.pubDate,
           original_url: candidate.link,
         });

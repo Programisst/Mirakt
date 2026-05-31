@@ -22,9 +22,13 @@ export async function GET(req: NextRequest) {
     .order("published_at", { ascending: false })
     .range(page * limit, (page + 1) * limit - 1);
 
-  // Every tab — including "main" — shows only its own articles, so nothing
-  // repeats across tabs. (main now holds general top-news, see cron classifyMain.)
-  query = query.eq("category", category);
+  // "Главное" is the front page: newest across ALL sections (so it's never empty).
+  // Every other tab shows only its own section. Each article lives in exactly one
+  // section, so the only overlap is the front page mirroring section headlines —
+  // standard for any news site.
+  if (category !== "main") {
+    query = query.eq("category", category);
+  }
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
