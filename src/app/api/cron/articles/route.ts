@@ -15,12 +15,12 @@ function adminDb() {
 }
 
 // ── RSS feeds per category ────────────────────────────────────────────────────
-// Each category has its OWN dedicated section feed (NO shared general feed —
-// a general feed like lenta/news or tass/v2 would steal russia/world stories
-// into "main", which is why those tabs looked empty or duplicated).
+// Each category pulls from its own section feed. "main" pulls the general top-news
+// feed; any of its items that actually belong to a specific section get reclassified
+// (see classifyMain below), so every article lands in EXACTLY one tab — no overlap.
 const FEEDS: { url: string; category: string }[] = [
   { url: "https://crimea.ria.ru/export/rss2/index.xml",        category: "crimea" },
-  { url: "https://ria.ru/export/rss2/index.xml",               category: "main" },
+  { url: "https://lenta.ru/rss/news",                          category: "main" },
   { url: "https://lenta.ru/rss/news/world",                    category: "world" },
   { url: "https://lenta.ru/rss/news/russia",                   category: "russia" },
   { url: "https://www.vedomosti.ru/rss/rubric/economics",      category: "economy" },
@@ -29,6 +29,23 @@ const FEEDS: { url: string; category: string }[] = [
   { url: "https://lenta.ru/rss/news/science",                  category: "science" },
   { url: "https://nplus1.ru/rss",                              category: "science" },
 ];
+
+// Keyword routing for items coming from the general "main" feed, so a Russia/world/
+// economy story doesn't sit in "main" duplicating what its own tab would show.
+const ROUTE: { cat: string; re: RegExp }[] = [
+  { cat: "economy",  re: /эконом|финанс|рубл|доллар|евро|валют|инфляц|бирж|акци|нефт|газ|банк|ввп|бюджет|налог|санкци|рынок|цен[ыа]|тариф/i },
+  { cat: "science",  re: /наук|учен|исследован|космос|спутник|технолог|нейросет|робот|физик|хими|биолог|медицин|вакцин|климат|телескоп|марс/i },
+  { cat: "politics", re: /политик|госдум|депутат|парламент|выбор|закон|министр|кремл|путин|мишустин|лавров|санкци|переговор|саммит|нато|оон/i },
+  { cat: "world",    re: /сша|украин|киев|китай|европ|герман|франц|британ|израил|иран|япон|нато|оон|евросоюз|зарубеж|международн/i },
+  { cat: "russia",   re: /росси|москв|петербург|губернатор|област|край|республик|сибир|урал|кавказ|поволж|минобороны|мвд/i },
+];
+
+function classifyMain(text: string): string {
+  for (const { cat, re } of ROUTE) {
+    if (re.test(text)) return cat;
+  }
+  return "main";
+}
 
 // ── Candidate article ─────────────────────────────────────────────────────────
 interface Candidate {
@@ -216,10 +233,22 @@ function aiImage(prompt: string): string {
 // 2) RSS thumbnail (the real event photo, if present)
 // 3) AI generation (last resort so a card is never empty)
 async function pickImage(candidate: Candidate, keywords: string, avoid: Set<string>): Promise<string> {
-  const pexels = await pexelsImage(keywords, avoid);
+  // For Russia-centric tabs, bias stock search toward Russian imagery so a story
+  // about Russia doesn't get e.g. an Ethiopian church or a random cow.
+  const ruBias = ["russia", "russian", "moscow"];
+  const kw = keywords.toLowerCase();
+  const needsBias = ["russia", "crimea", "politics", "economy"].includes(candidate.category)
+    && !ruBias.some((w) => kw.includes(w));
+  const query = needsBias ? `${keywords} russia` : keywords;
+
+  const pexels = await pexelsImage(query, avoid);
   if (pexels) { avoid.add(pexels); return pexels; }
-  if (candidate.thumbnail && candidate.thumbnail.startsWith("http")) return candidate.thumbnail;
-  return aiImage(keywords);
+  // RSS thumbnail only if it's the real article photo (skip if it was a dupe)
+  if (candidate.thumbnail && candidate.thumbnail.startsWith("http") && !avoid.has(candidate.thumbnail)) {
+    avoid.add(candidate.thumbnail);
+    return candidate.thumbnail;
+  }
+  return aiImage(query);
 }
 
 interface PipelineResult {
@@ -244,6 +273,17 @@ async function runPipeline(): Promise<PipelineResult> {
     .flatMap((r) => r.value)
     .filter((c) => c.title.length > 10 && c.description.length > 30);
 
+  // Route Crimea stories precisely. The crimea.ria feed mixes in touristy/off-region
+  // items (Sochi, Turkey...) — keep something in Crimea ONLY if it really mentions
+  // the region; otherwise move it to Russia so it's not lost.
+  const CRIMEA_RE = /крым|севастопол|симферопол|керч|ялт|евпатор|феодос|джанкой|алушт|бахчисара/i;
+  for (const c of candidates) {
+    const text = `${c.title} ${c.description}`;
+    if (CRIMEA_RE.test(text)) { c.category = "crimea"; continue; }
+    if (c.category === "crimea") c.category = "russia";       // crimea feed fluff → russia
+    if (c.category === "main") c.category = classifyMain(text); // keep main clean
+  }
+
   // Dedup by link AND by a normalized title key (first 6 significant words) so the
   // same event reported by two agencies doesn't show up twice across tabs.
   const titleKey = (t: string) =>
@@ -267,7 +307,8 @@ async function runPipeline(): Promise<PipelineResult> {
   const existingSet = new Set((existing ?? []).map((r: { original_url: string }) => r.original_url));
   const newOnes = unique.filter((c) => !existingSet.has(c.link));
 
-  // Crimea first (user's priority tab — must never be empty), then the rest.
+  // Crimea leads (user's priority tab); main holds general top-news that didn't
+  // fit any specific section. Every article is in exactly one tab — no overlap.
   const categories = ["crimea", "main", "world", "russia", "economy", "politics", "science"];
   const perCat: Record<string, Candidate[]> = {};
   for (const cat of categories) {
@@ -283,7 +324,8 @@ async function runPipeline(): Promise<PipelineResult> {
       if (perCat[cat][i]) queue.push(perCat[cat][i]);
     }
   }
-  const toProcess = queue.slice(0, 8);
+  // 7 per run = one per category, fits inside 8b-instant's per-minute token limit.
+  const toProcess = queue.slice(0, 7);
 
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   await db.from("articles").delete().lt("published_at", cutoff);

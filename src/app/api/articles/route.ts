@@ -22,9 +22,9 @@ export async function GET(req: NextRequest) {
     .order("published_at", { ascending: false })
     .range(page * limit, (page + 1) * limit - 1);
 
-  if (category !== "main") {
-    query = query.eq("category", category);
-  }
+  // Every tab — including "main" — shows only its own articles, so nothing
+  // repeats across tabs. (main now holds general top-news, see cron classifyMain.)
+  query = query.eq("category", category);
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
