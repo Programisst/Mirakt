@@ -1,53 +1,135 @@
-# Mirakt
+# Mirakt — Новостной портал
 
-**Mirakt** — Premium News Portal. **Stack:** Next.js, Tailwind CSS, TypeScript.
+Автоматический новостной агрегатор с ИИ-обработкой статей, системой авторизации и встроенным ИИ-ассистентом. Контент генерируется по расписанию без ручного участия редакции.
 
-Modern media outlet design with RSS feed aggregation, dark UI, category feeds, and internal article pages.
+**Стек:** Next.js 15 · TypeScript · Tailwind CSS · Supabase · Groq AI · Vercel
 
-## Getting started
+---
+
+## Возможности
+
+- **Авто-генерация новостей** — cron каждые несколько часов забирает RSS с 13 источников (РИА, Лента, ТАСС, Ведомости, Газета.ру, н+1 и др.), переписывает статьи через Groq AI и сохраняет в базу
+- **Реальные фото** — картинки берутся из RSS-лент источников (редакционные фото), запасной вариант — og:image со страницы оригинала
+- **6 разделов** — Главное, Мир, Россия, Крым, Экономика, Наука и техника, Политика
+- **ИИ-чат** — встроенный ассистент Mirai на базе Groq, доступен авторизованным пользователям
+- **Полнотекстовый поиск** — поиск по всем статьям за последние 7 дней
+- **Авторизация** — регистрация + подтверждение email + JWT, личный кабинет
+- **RSS-лента** — `/rss.xml` для внешних агрегаторов
+- **Адаптивный дизайн** — тёмная тема, работает на мобильных
+
+---
+
+## Архитектура
+
+```
+src/
+├── app/
+│   ├── api/
+│   │   ├── cron/articles/     # Главный пайплайн: RSS → Groq AI → Supabase
+│   │   ├── auth/              # Регистрация, логин, подтверждение email
+│   │   ├── admin/             # Загрузка контента, защита паролем
+│   │   ├── news/              # Получение статей для фронта
+│   │   ├── feed/              # RSS-лента /rss.xml
+│   │   ├── support/           # Форма обратной связи
+│   │   ├── track/             # Трекинг просмотров и времени чтения
+│   │   └── profile/           # Профиль, аватар, история чтения
+│   ├── novosti/[slug]/        # Страница статьи
+│   ├── auth/                  # Страницы входа и регистрации
+│   ├── cabinet/               # Личный кабинет
+│   ├── support/               # Страница поддержки
+│   └── [статичные страницы]   # О нас, контакты, условия, конфиденциальность
+├── components/
+│   ├── Navbar.tsx             # Шапка с категориями и поиском
+│   ├── NewsCard.tsx            # Карточка новости
+│   ├── MiraiChat.tsx          # ИИ-чат ассистент
+│   └── VideoPreloader.tsx     # Стартовая заставка
+└── lib/
+    ├── slugify.ts             # Генерация уникальных slug для статей
+    ├── admin-auth.ts          # Проверка пароля админки
+    └── mailer.ts              # Отправка email (SMTP)
+```
+
+---
+
+## Пайплайн генерации контента
+
+```
+cron-job.org (каждые N часов)
+        │
+        ▼
+POST /api/cron/articles
+        │
+        ├─ Парсинг 13 RSS-лент
+        ├─ Дедупликация по URL и заголовку
+        ├─ Ранжирование по "горячести" (сколько агентств пишут + свежесть)
+        ├─ Groq AI (llama-3.1-8b-instant) — переписывает, категоризирует, генерирует excerpt
+        ├─ Выбор фото: RSS-фото → og:image → AI (pollinations.ai)
+        └─ Сохранение в Supabase (старые статьи > 7 дней удаляются)
+```
+
+Если основной ключ Groq исчерпан (429) — автоматически переключается на резервный.
+
+---
+
+## Переменные окружения
+
+Скопируй `.env.example` → `.env.local` и заполни:
+
+| Переменная | Описание |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL проекта Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon ключ Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service Role ключ (только сервер) |
+| `GROQ_API_KEY` | Groq API — основной (генерация статей + чат) |
+| `GROQ_CHAT_API_KEY` | Groq API — резервный (при исчерпании основного) |
+| `ADMIN_PASSWORD` | Пароль для доступа в /admin |
+| `JWT_SECRET` | Секрет для подписи JWT токенов |
+| `CRON_SECRET` | Секрет для защиты эндпоинта cron |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | SMTP для отправки email |
+| `NEXT_PUBLIC_SITE_URL` | Публичный URL сайта |
+
+---
+
+## Supabase — таблицы
+
+| Таблица | Содержимое |
+|---|---|
+| `articles` | Новости: title, slug, excerpt, content, image_url, category, published_at, original_url |
+| `users` | Аккаунты: email, password_hash, avatar_url, is_verified |
+| `read_history` | История прочитанных статей по user_id |
+| `stats` | Счётчик total_published (переживает 7-дневную очистку) |
+
+---
+
+## Запуск локально
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Сайт: [http://localhost:3000](http://localhost:3000)
 
-## Repository root (minimal Next.js)
+Запустить пайплайн вручную (без cron):
+```
+http://localhost:3000/api/cron/articles
+```
 
-Вся логика приложения живёт в **`src/`**. В корне остаётся только то, что требует экосистема Next/Node:
+---
 
-| File / folder | Why it stays here |
-|---------------|-------------------|
-| `package.json`, `package-lock.json` | npm |
-| `next.config.ts` | единственный конфиг Next (**нет** `next.config.js`-дубликата) |
-| `tsconfig.json`, `next-env.d.ts` | TypeScript / Next |
-| `postcss.config.mjs`, `eslint.config.mjs` | Tailwind / ESLint |
-| `public/` | статика (`logo.jpeg`, `IMG_8325.MP4`, …) |
-| `.gitignore` | Git |
-| `README.md` | описание репозитория |
-| `.env.example` | шаблон переменных (без секретов), **коммитится** |
+## Деплой
 
-Файлы `.env*` с секретами **не коммитятся** (см. `.gitignore`). Скопируй `.env.example` → `.env.local` в корне проекта.
+Проект деплоится на **Vercel**. Все переменные окружения задаются в настройках проекта на Vercel.
 
-## `src/` layout
+Cron запускается через **cron-job.org** — POST-запрос на `/api/cron/articles?secret=CRON_SECRET`.
 
-| Path | Role |
-|------|------|
-| `src/app/` | App Router, `layout.tsx`, `globals.css`, страницы |
-| `src/app/api/` | RSS (`/api/feed`), auth (`/api/auth/*`) |
-| `src/components/` | `VideoPreloader`, `Navbar`, `NewsCard` |
-| `src/constants/` | токены сайта, категории |
-| `src/lib/` | хелперы (thematic images, mailer, JWT) |
-| `src/types/` | общие типы TypeScript |
+---
 
-## Environment
+## Команды
 
-См. **`.env.example`**. Основное: `JWT_SECRET`; для писем с кодом — SMTP-поля (`SMTP_USER`, `SMTP_PASS`, …).
-
-## Scripts
-
-- `npm run dev` — dev server  
-- `npm run build` — production build  
-- `npm run start` — запуск production  
-- `npm run lint` — ESLint  
+```bash
+npm run dev      # dev сервер
+npm run build    # production сборка
+npm run start    # запуск production
+npm run lint     # ESLint
+```
