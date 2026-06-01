@@ -13,6 +13,7 @@ import { GOLD, LOGO_SRC } from "@/constants/site";
 import type { AuthUser, CurrencyRates, MirakcArticle, NewsItem } from "@/types/news";
 import { supabase } from "@/lib/supabase";
 import { useLocale } from "@/lib/locale-context";
+import { MiraiChat } from "@/components/MiraiChat";
 
 const PAGE_SIZE       = 10;
 const CACHE_TTL_MS    = 3 * 60 * 1000;
@@ -1277,6 +1278,7 @@ export function HomeClient() {
           </div>
         </footer>
       </div>
+      <MiraiChat user={user} onOpenAuth={() => setShowAuth(true)} />
     </>
   );
 }
