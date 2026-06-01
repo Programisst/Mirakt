@@ -127,12 +127,13 @@ interface Rewritten {
 
 const VALID_CATS = ["world", "russia", "crimea", "economy", "science", "politics"];
 
-async function callGroq(candidate: Candidate): Promise<Rewritten> {
+async function callGroq(candidate: Candidate, apiKey?: string): Promise<Rewritten> {
+  const key = apiKey ?? process.env.GROQ_API_KEY;
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type":  "application/json",
-      "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+      "Authorization": `Bearer ${key}`,
     },
     body: JSON.stringify({
       model:       "llama-3.1-8b-instant",
@@ -182,75 +183,80 @@ async function callGroq(candidate: Candidate): Promise<Rewritten> {
   return JSON.parse(text) as Rewritten;
 }
 
-// Retry once — 8b-instant occasionally returns malformed/truncated JSON (Groq 400).
+// Retry logic: on JSON errors retry same key; on rate limit try the fallback key.
 async function rewrite(candidate: Candidate): Promise<Rewritten> {
   try {
     return await callGroq(candidate);
   } catch (first) {
-    if (String(first).includes("Rate limit")) throw first;
+    const msg = String(first);
+    if (msg.includes("Rate limit") || msg.includes("429")) {
+      // Primary key exhausted — try the chat account key as fallback
+      const fallbackKey = process.env.GROQ_CHAT_API_KEY;
+      if (fallbackKey) {
+        await new Promise((r) => setTimeout(r, 500));
+        return await callGroq(candidate, fallbackKey);
+      }
+      throw first;
+    }
     await new Promise((r) => setTimeout(r, 800));
     return await callGroq(candidate);
   }
 }
 
 // ── Image sourcing ────────────────────────────────────────────────────────────
-// Reliable professional photo from Pexels by topic keywords (free CDN, no hotlink
-// block). Fetches several results and returns the first NOT already used this run
-// (and not in DB), so two articles never get the same stock photo.
-async function pexelsImage(query: string, avoid: Set<string>): Promise<string> {
-  const key = process.env.PEXELS_API_KEY;
-  if (!key || !query) return "";
+// Scrape og:image from the original article page — used when the RSS feed
+// didn't include a thumbnail directly.
+async function fetchOgImage(url: string): Promise<string> {
   try {
-    const res = await fetch(
-      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=15&orientation=landscape&size=medium`,
-      { headers: { Authorization: key }, signal: AbortSignal.timeout(6000) }
-    );
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(4000),
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Mirakt/1.0)" },
+    });
     if (!res.ok) return "";
-    const data = await res.json();
-    const photos: Array<{ src?: Record<string, string> }> = data.photos ?? [];
-    let firstAvailable = "";
-    for (const p of photos) {
-      const url = p.src?.large ?? p.src?.landscape ?? p.src?.medium ?? "";
-      if (!url) continue;
-      if (!firstAvailable) firstAvailable = url;
-      if (!avoid.has(url)) return url;
-    }
-    return firstAvailable; // all 15 already used — reuse the top one rather than nothing
+    const html = await res.text();
+    // og:image can appear in two attribute orderings
+    const m =
+      html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    const found = m?.[1] ?? "";
+    return found.startsWith("http") ? found : "";
   } catch {
     return "";
   }
 }
 
-// AI fallback if Pexels returns nothing
+// AI image as the absolute last resort (no text artifacts at pollinations.ai
+// because we avoid prompts that would cause signs/license plates).
 function aiImage(prompt: string): string {
   const seed = Math.floor(Math.random() * 999999);
   const encoded = encodeURIComponent(
-    `${prompt}, photorealistic, high quality news photo, no text`
+    `${prompt}, photorealistic news photo, no text, no signs, no logos`
   );
   return `https://image.pollinations.ai/prompt/${encoded}?width=800&height=500&seed=${seed}&nologo=true`;
 }
 
 // Pick the best available image for an article.
-// 1) Pexels by English keywords (reliable, professional, de-duplicated)
-// 2) RSS thumbnail (the real event photo, if present)
-// 3) AI generation (last resort so a card is never empty)
-async function pickImage(candidate: Candidate, keywords: string, avoid: Set<string>): Promise<string> {
-  // For Russia-centric tabs, bias stock search toward Russian imagery so a story
-  // about Russia doesn't get e.g. an Ethiopian church or a random cow.
-  const ruBias = ["russia", "russian", "moscow"];
-  const kw = keywords.toLowerCase();
-  const needsBias = ["russia", "crimea", "politics", "economy"].includes(candidate.category)
-    && !ruBias.some((w) => kw.includes(w));
-  const query = needsBias ? `${keywords} russia` : keywords;
-
-  const pexels = await pexelsImage(query, avoid);
-  if (pexels) { avoid.add(pexels); return pexels; }
-  // RSS thumbnail only if it's the real article photo (skip if it was a dupe)
+// 1) RSS thumbnail  — real editorial photo embedded in the feed
+// 2) og:image       — scraped from the source article page
+// 3) AI generation  — last resort so a card is never image-less
+async function pickImage(candidate: Candidate, imagePrompt: string, avoid: Set<string>): Promise<string> {
+  // Real photo directly from the RSS item
   if (candidate.thumbnail && candidate.thumbnail.startsWith("http") && !avoid.has(candidate.thumbnail)) {
     avoid.add(candidate.thumbnail);
     return candidate.thumbnail;
   }
-  return aiImage(query);
+
+  // Scrape og:image from the original article — catches feeds that don't embed media tags
+  if (candidate.link) {
+    const og = await fetchOgImage(candidate.link);
+    if (og && !avoid.has(og)) {
+      avoid.add(og);
+      return og;
+    }
+  }
+
+  // AI generation — only if both RSS and og:image failed
+  return aiImage(imagePrompt || candidate.title);
 }
 
 interface PipelineResult {
