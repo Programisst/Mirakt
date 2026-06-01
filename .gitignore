@@ -44,3 +44,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 tsconfig.tsbuildinfo
+
+# local test scripts (may contain hardcoded keys)
+/scripts/
+
+# IDE / Claude Code local settings
+.claude/settings.local.json
