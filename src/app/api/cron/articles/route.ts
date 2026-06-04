@@ -18,32 +18,34 @@ function adminDb() {
 // The feed tag is only a HINT for balancing how many candidates we take per topic.
 // The REAL category of each saved article is decided by the AI per story (callGroq),
 // so a misfiled RSS item still lands in the correct tab.
+// Only top sources that reliably embed editorial photos in their RSS (media:content / media:thumbnail).
+// Two sources per category gives enough daily volume while keeping image hit-rate near 100%.
 const FEEDS: { url: string; category: string }[] = [
-  // Crimea — multiple live regional sources so the AI has plenty to read
+  // World — RIA + Lenta both include media:content/thumbnail
+  { url: "https://ria.ru/export/rss2/world/index.xml",         category: "world" },
+  { url: "https://lenta.ru/rss/news/world",                    category: "world" },
+  // Russia — RIA society + Lenta russia
+  { url: "https://ria.ru/export/rss2/society/index.xml",       category: "russia" },
+  { url: "https://lenta.ru/rss/news/russia",                   category: "russia" },
+  // Politics — RIA politics + TASS
+  { url: "https://ria.ru/export/rss2/politics/index.xml",      category: "politics" },
+  { url: "https://tass.ru/rss/v2.xml",                         category: "politics" },
+  // Economy — RIA economy + Lenta economics
+  { url: "https://ria.ru/export/rss2/economy/index.xml",       category: "economy" },
+  { url: "https://lenta.ru/rss/news/economics",                category: "economy" },
+  // Science — N+1 + Lenta science (both reliably have images)
+  { url: "https://nplus1.ru/rss",                              category: "science" },
+  { url: "https://lenta.ru/rss/news/science",                  category: "science" },
+  // Crimea — RIA Crimea (has images) + regional backup
   { url: "https://crimea.ria.ru/export/rss2/index.xml",        category: "crimea" },
   { url: "https://crimea-news.com/rss.xml",                    category: "crimea" },
-  { url: "https://kafanews.com/rss",                           category: "crimea" },
-  // World
-  { url: "https://lenta.ru/rss/news/world",                    category: "world" },
-  // Russia
-  { url: "https://lenta.ru/rss/news/russia",                   category: "russia" },
-  // Economy — more sources so the tab fills like the others
-  { url: "https://www.vedomosti.ru/rss/rubric/economics",      category: "economy" },
-  { url: "https://lenta.ru/rss/news/economics",                category: "economy" },
-  { url: "https://www.gazeta.ru/export/rss/business.xml",      category: "economy" },
-  // Politics — more sources so the tab stays full
-  { url: "https://www.vedomosti.ru/rss/rubric/politics",       category: "politics" },
-  { url: "https://www.gazeta.ru/export/rss/politics.xml",      category: "politics" },
-  { url: "https://tass.ru/rss/v2.xml",                         category: "politics" },
-  // Science
-  { url: "https://lenta.ru/rss/news/science",                  category: "science" },
-  { url: "https://nplus1.ru/rss",                              category: "science" },
 ];
 
 // ── Candidate article ─────────────────────────────────────────────────────────
 interface Candidate {
   title: string;
   description: string;
+  fullContent: string;
   link: string;
   thumbnail: string;
   pubDate: string;
@@ -89,17 +91,27 @@ function extractImage(item: Parameters<typeof rssParser.parseURL>[0] extends nev
   return "";
 }
 
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim();
+}
+
 async function fetchFeed(url: string, category: string): Promise<Candidate[]> {
   try {
     const feed = await rssParser.parseURL(url);
-    return (feed.items ?? []).slice(0, 20).map((item) => ({
-      title:       item.title?.trim() ?? "",
-      description: (item.contentSnippet || item.summary || item.content || "").slice(0, 600),
-      link:        item.link ?? "",
-      thumbnail:   extractImage(item as Parameters<typeof extractImage>[0]),
-      pubDate:     item.pubDate ?? item.isoDate ?? new Date().toISOString(),
-      category,
-    })).filter((c) => c.title && c.link);
+    return (feed.items ?? []).slice(0, 20).map((item) => {
+      const ce = item["content:encoded"] as string | undefined;
+      const rawFull = ce ? stripHtml(ce) : "";
+      const snippet = (item.contentSnippet || item.summary || item.content || "").slice(0, 400);
+      return {
+        title:       item.title?.trim() ?? "",
+        description: snippet,
+        fullContent: rawFull.slice(0, 2000),
+        link:        item.link ?? "",
+        thumbnail:   extractImage(item as Parameters<typeof extractImage>[0]),
+        pubDate:     item.pubDate ?? item.isoDate ?? new Date().toISOString(),
+        category,
+      };
+    }).filter((c) => c.title && c.link);
   } catch {
     return [];
   }
@@ -165,7 +177,7 @@ async function callGroq(candidate: Candidate, apiKey?: string): Promise<Rewritte
         },
         {
           role: "user",
-          content: `Заголовок: ${candidate.title}\n\nОписание: ${candidate.description}`,
+          content: `Заголовок: ${candidate.title}\n\nОписание: ${candidate.description}${candidate.fullContent ? `\n\nПолный текст: ${candidate.fullContent}` : ""}`,
         },
       ],
     }),
@@ -323,25 +335,26 @@ async function runPipeline(): Promise<PipelineResult> {
   const existingSet = new Set((existing ?? []).map((r: { original_url: string }) => r.original_url));
   const newOnes = unique.filter((c) => !existingSet.has(c.link));
 
-  // Balance candidates across feed topics so every tab fills evenly. Within each
-  // topic, pick the HOTTEST stories first (covered by many agencies + freshest),
-  // not just newest — that's what makes the feed feel top-tier. The AI assigns the
-  // final tab per story; this only keeps Groq from getting 7 economy items at once.
-  const feedTopics = ["crimea", "world", "russia", "economy", "politics", "science"];
+  // Strict round-robin: 1 from each category per pass, max 2 passes.
+  // Order = most content-hungry tabs first so they fill fastest.
+  const feedTopics = ["world", "russia", "politics", "science", "economy", "crimea"];
   const perCat: Record<string, Candidate[]> = {};
   for (const cat of feedTopics) {
     perCat[cat] = newOnes
       .filter((c) => c.category === cat)
       .sort((a, b) => score(b) - score(a));
   }
+  // Build queue: pass 1 → 1 from each (6 items), pass 2 → 1 more from each.
+  // We process up to 12 candidates but stop saving once SAVE_TARGET reached,
+  // so no single category dominates even when others have no new articles.
+  const SAVE_TARGET = 6;
   const queue: Candidate[] = [];
   for (let i = 0; i < 2; i++) {
     for (const cat of feedTopics) {
       if (perCat[cat][i]) queue.push(perCat[cat][i]);
     }
   }
-  // 7 per run fits inside 8b-instant's per-minute token limit and the 30s timeout.
-  const toProcess = queue.slice(0, 7);
+  const toProcess = queue.slice(0, 12);
 
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   await db.from("articles").delete().lt("published_at", cutoff);
@@ -355,8 +368,8 @@ async function runPipeline(): Promise<PipelineResult> {
   const startTime = Date.now();
   let saved = 0;
   for (const candidate of toProcess) {
-    // Stop early so we return within the 30s cron-job.org timeout.
-    if (Date.now() - startTime > 26_000) {
+    if (saved >= SAVE_TARGET) break;
+    if (Date.now() - startTime > 50_000) {
       errors.push(`TIME_BUDGET: stopped, ${saved} saved`);
       break;
     }
@@ -364,43 +377,46 @@ async function runPipeline(): Promise<PipelineResult> {
       const result = await rewrite(candidate);
       if (result.skip) {
         errors.push(`SKIP [${candidate.category}]: ${candidate.title.slice(0, 50)}`);
-      } else if (!result.title || !result.content) {
+        continue;
+      }
+      if (!result.title || !result.content) {
         errors.push(`NO_CONTENT [${candidate.category}]`);
-      } else {
-        // Trust the curated section feed for the tab — each feed is topic-accurate
-        // (vedomosti/politics = политика, lenta/world = мир, etc.), so every tab
-        // fills reliably from its own feed. The AI category is only a fallback.
-        // Crimea override: anything clearly mentioning Crimea goes to Crimea; and
-        // crimea-feed fluff that ISN'T about Crimea (Sochi, Turkey) falls back to AI.
-        const text = `${candidate.title} ${candidate.description}`;
-        let category = candidate.category;
-        if (category === "crimea" && !CRIMEA_RE.test(text)) {
-          category = VALID_CATS.includes(result.category ?? "") ? result.category! : "russia";
-        }
-        if (CRIMEA_RE.test(text)) category = "crimea";
+        continue;
+      }
 
-        const finalImage = await pickImage(candidate, usedImages);
-        const slug = uniqueSlug(result.title);
-        const { error } = await db.from("articles").insert({
-          slug,
-          title:        result.title,
-          excerpt:      result.excerpt ?? result.content.slice(0, 200),
-          content:      result.content,
-          image_url:    finalImage,
-          category,
-          published_at: candidate.pubDate,
-          original_url: candidate.link,
-        });
-        if (error) {
-          errors.push(`DB_ERR [${candidate.category}]: ${error.message}`);
-        } else {
-          saved++;
-        }
+      const finalImage = await pickImage(candidate, usedImages);
+      if (!finalImage) {
+        errors.push(`NO_IMAGE [${candidate.category}]: ${candidate.title.slice(0, 50)}`);
+        continue;
+      }
+
+      const text = `${candidate.title} ${candidate.description}`;
+      let category = candidate.category;
+      if (category === "crimea" && !CRIMEA_RE.test(text)) {
+        category = VALID_CATS.includes(result.category ?? "") ? result.category! : "russia";
+      }
+      if (CRIMEA_RE.test(text)) category = "crimea";
+
+      const slug = uniqueSlug(result.title);
+      const { error } = await db.from("articles").insert({
+        slug,
+        title:        result.title,
+        excerpt:      result.excerpt ?? result.content.slice(0, 200),
+        content:      result.content,
+        image_url:    finalImage,
+        category,
+        published_at: candidate.pubDate,
+        original_url: candidate.link,
+      });
+      if (error) {
+        errors.push(`DB_ERR [${candidate.category}]: ${error.message}`);
+      } else {
+        saved++;
       }
     } catch (e) {
       errors.push(`ERR [${candidate.category}]: ${String(e).slice(0, 100)}`);
     }
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 800));
   }
 
   // All-time published counter (survives the 7-day cleanup of the articles table).
