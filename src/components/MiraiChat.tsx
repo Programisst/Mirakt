@@ -105,6 +105,9 @@ export function MiraiChat({ user, onOpenAuth }: Props) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [retryCountdown, setRetryCountdown] = useState(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryMsgRef = useRef<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -119,6 +122,21 @@ export function MiraiChat({ user, onOpenAuth }: Props) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (retryCountdown <= 0) return;
+    const t = setTimeout(() => setRetryCountdown((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [retryCountdown]);
+
+  useEffect(() => {
+    if (retryCountdown === 0 && retryMsgRef.current) {
+      const msg = retryMsgRef.current;
+      retryMsgRef.current = "";
+      send(msg);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retryCountdown]);
 
   async function send(text?: string) {
     const content = (text ?? input).trim();
@@ -139,7 +157,15 @@ export function MiraiChat({ user, onOpenAuth }: Props) {
       const data = await res.json();
       let reply: string;
       if (res.status === 429 || data.error === "rate_limit") {
-        reply = "Слишком много запросов — подожди пару секунд и спроси снова.";
+        const wait = Math.min(data.retryAfter ?? 10, 60);
+        if (wait <= 15) {
+          // short wait — auto-retry silently
+          retryMsgRef.current = content;
+          setRetryCountdown(wait);
+          reply = `Лимит запросов — повторяю через ${wait} сек…`;
+        } else {
+          reply = `Лимит запросов исчерпан. Подожди ${wait} секунд и попробуй снова.`;
+        }
       } else {
         reply = data.reply ?? "Что-то пошло не так. Попробуй ещё раз.";
       }

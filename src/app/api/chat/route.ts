@@ -8,13 +8,7 @@ function getDb() {
   );
 }
 
-const SYSTEM_PROMPT = `Ты Mirakt AI — умный ассистент новостного портала Mirakt (mirakt.ru).
-Ты отвечаешь на русском языке, кратко и по делу.
-Тебе будут предоставлены свежие статьи с сайта как контекст.
-Используй их для ответа, если вопрос связан с новостями.
-На общие вопросы отвечай из своих знаний.
-Не выдумывай факты — если не знаешь, скажи об этом.
-Не упоминай что ты языковая модель или ИИ — ты просто Mirakt AI.`;
+const SYSTEM_PROMPT = `Ты Mirakt AI — ассистент портала Mirakt. Отвечай кратко на русском. Используй список свежих новостей как контекст. На общие вопросы отвечай из своих знаний. Не выдумывай факты.`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -35,16 +29,16 @@ export async function POST(req: NextRequest) {
       CATS.map((cat) =>
         db
           .from("articles")
-          .select("title,excerpt,category,published_at")
+          .select("title,category")
           .eq("category", cat)
           .order("published_at", { ascending: false })
-          .limit(3)
+          .limit(2)
       )
     );
 
     const articles = results.flatMap((r) => r.data ?? []);
     const articlesContext = articles
-      .map((a) => `[${a.category}] ${a.title}: ${a.excerpt ?? ""}`)
+      .map((a) => `[${a.category}] ${a.title}`)
       .join("\n");
 
     const systemWithContext = `${SYSTEM_PROMPT}
@@ -54,7 +48,7 @@ ${articlesContext}`;
 
     const groqMessages = [
       { role: "system", content: systemWithContext },
-      ...messages.slice(-10), // last 10 messages max
+      ...messages.slice(-6), // last 6 messages max
     ];
 
     async function callGroq(apiKey: string) {
@@ -67,7 +61,7 @@ ${articlesContext}`;
         body: JSON.stringify({
           model: "llama-3.1-8b-instant",
           messages: groqMessages,
-          max_tokens: 500,
+          max_tokens: 350,
           temperature: 0.7,
         }),
       });
@@ -80,7 +74,8 @@ ${articlesContext}`;
       const err = await groqRes.text();
       console.error("Groq error:", groqRes.status, err);
       if (groqRes.status === 429) {
-        return NextResponse.json({ error: "rate_limit" }, { status: 429 });
+        const retryAfter = parseInt(groqRes.headers.get("retry-after") ?? "60", 10);
+        return NextResponse.json({ error: "rate_limit", retryAfter }, { status: 429 });
       }
       return NextResponse.json({ error: "unavailable" }, { status: 503 });
     }
