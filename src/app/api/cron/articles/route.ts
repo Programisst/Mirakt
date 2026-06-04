@@ -121,7 +121,6 @@ interface Rewritten {
   title?: string;
   excerpt?: string;
   content?: string;
-  image_prompt?: string;
   category?: string;   // chosen by the AI from the 6 real sections
 }
 
@@ -151,7 +150,6 @@ async function callGroq(candidate: Candidate, apiKey?: string): Promise<Rewritte
 - excerpt: 2-3 предложения, краткое описание
 - content: 350-500 слов, абзацы разделены \\n\\n, деловой стиль
 - НЕ упоминай источник (РИА, ТАСС, Лента, Коммерсант и т.д.)
-- image_prompt: 3-6 английских слов — КОНКРЕТНЫЙ видимый объект/сцена по теме (например "oil refinery pipeline", "russian parliament building", "wheat harvest field"), НЕ абстракции типа "economy"
 - category: ОПРЕДЕЛИ раздел по смыслу новости, строго одно из:
   "crimea" — про Крым/Севастополь и крымские города
   "world" — про другие страны, международные отношения (США, Украина, Турция, Китай, ЕС...)
@@ -163,7 +161,7 @@ async function callGroq(candidate: Candidate, apiKey?: string): Promise<Rewritte
 
 Верни СТРОГО валидный JSON, обязательно закрой все кавычки и скобки:
 {"skip":true} — если пропустить
-{"skip":false,"title":"...","excerpt":"...","content":"...","image_prompt":"...","category":"..."}`,
+{"skip":false,"title":"...","excerpt":"...","content":"...","category":"..."}`,
         },
         {
           role: "user",
@@ -183,19 +181,13 @@ async function callGroq(candidate: Candidate, apiKey?: string): Promise<Rewritte
   return JSON.parse(text) as Rewritten;
 }
 
-// Retry logic: on JSON errors retry same key; on rate limit try the fallback key.
+// Retry once on JSON parse errors. Rate limit = skip, don't touch the chat key.
 async function rewrite(candidate: Candidate): Promise<Rewritten> {
   try {
     return await callGroq(candidate);
   } catch (first) {
     const msg = String(first);
     if (msg.includes("Rate limit") || msg.includes("429")) {
-      // Primary key exhausted — try the chat account key as fallback
-      const fallbackKey = process.env.GROQ_CHAT_API_KEY;
-      if (fallbackKey) {
-        await new Promise((r) => setTimeout(r, 500));
-        return await callGroq(candidate, fallbackKey);
-      }
       throw first;
     }
     await new Promise((r) => setTimeout(r, 800));
@@ -204,59 +196,64 @@ async function rewrite(candidate: Candidate): Promise<Rewritten> {
 }
 
 // ── Image sourcing ────────────────────────────────────────────────────────────
-// Scrape og:image from the original article page — used when the RSS feed
-// didn't include a thumbnail directly.
-async function fetchOgImage(url: string): Promise<string> {
+// Scrape real editorial photo from the original article page.
+// Tries: og:image → twitter:image → first large <img> in the page body.
+async function fetchPageImage(url: string): Promise<string> {
   try {
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(4000),
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Mirakt/1.0)" },
+      signal: AbortSignal.timeout(7000),
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Mirakt/1.0; +https://mirakt.ru)" },
     });
     if (!res.ok) return "";
     const html = await res.text();
-    // og:image can appear in two attribute orderings
-    const m =
-      html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-    const found = m?.[1] ?? "";
-    return found.startsWith("http") ? found : "";
+
+    // og:image (both attribute orderings)
+    const ogA = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
+    const ogB = html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    const og = ogA?.[1] ?? ogB?.[1] ?? "";
+    if (og.startsWith("http")) return og;
+
+    // twitter:image / twitter:image:src
+    const twA = html.match(/<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i);
+    const twB = html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i);
+    const tw = twA?.[1] ?? twB?.[1] ?? "";
+    if (tw.startsWith("http")) return tw;
+
+    // First <img src> in article body that looks like a real photo (>200px implied by URL heuristics)
+    const imgs = [...html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)];
+    for (const m of imgs) {
+      const src = m[1];
+      if (!src.startsWith("http")) continue;
+      // Skip tiny icons, buttons, logos (common URL patterns)
+      if (/icon|logo|avatar|button|sprite|pixel|1x1|blank|spacer/i.test(src)) continue;
+      return src;
+    }
+
+    return "";
   } catch {
     return "";
   }
 }
 
-// AI image as the absolute last resort (no text artifacts at pollinations.ai
-// because we avoid prompts that would cause signs/license plates).
-function aiImage(prompt: string): string {
-  const seed = Math.floor(Math.random() * 999999);
-  const encoded = encodeURIComponent(
-    `${prompt}, photorealistic news photo, no text, no signs, no logos`
-  );
-  return `https://image.pollinations.ai/prompt/${encoded}?width=800&height=500&seed=${seed}&nologo=true`;
-}
-
-// Pick the best available image for an article.
-// 1) RSS thumbnail  — real editorial photo embedded in the feed
-// 2) og:image       — scraped from the source article page
-// 3) AI generation  — last resort so a card is never image-less
-async function pickImage(candidate: Candidate, imagePrompt: string, avoid: Set<string>): Promise<string> {
-  // Real photo directly from the RSS item
+// Pick the best available real image for an article.
+// 1) RSS thumbnail  — editorial photo embedded directly in the feed
+// 2) Page scrape    — og:image → twitter:image → first article img
+// If nothing found, returns "" — the card shows a clean category placeholder.
+async function pickImage(candidate: Candidate, avoid: Set<string>): Promise<string> {
   if (candidate.thumbnail && candidate.thumbnail.startsWith("http") && !avoid.has(candidate.thumbnail)) {
     avoid.add(candidate.thumbnail);
     return candidate.thumbnail;
   }
 
-  // Scrape og:image from the original article — catches feeds that don't embed media tags
   if (candidate.link) {
-    const og = await fetchOgImage(candidate.link);
-    if (og && !avoid.has(og)) {
-      avoid.add(og);
-      return og;
+    const img = await fetchPageImage(candidate.link);
+    if (img && !avoid.has(img)) {
+      avoid.add(img);
+      return img;
     }
   }
 
-  // AI generation — only if both RSS and og:image failed
-  return aiImage(imagePrompt || candidate.title);
+  return "";
 }
 
 interface PipelineResult {
@@ -382,7 +379,7 @@ async function runPipeline(): Promise<PipelineResult> {
         }
         if (CRIMEA_RE.test(text)) category = "crimea";
 
-        const finalImage = await pickImage(candidate, result.image_prompt || result.title, usedImages);
+        const finalImage = await pickImage(candidate, usedImages);
         const slug = uniqueSlug(result.title);
         const { error } = await db.from("articles").insert({
           slug,

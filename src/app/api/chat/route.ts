@@ -57,19 +57,24 @@ ${articlesContext}`;
       ...messages.slice(-10), // last 10 messages max
     ];
 
-    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.GROQ_CHAT_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "llama-3.1-8b-instant",
-        messages: groqMessages,
-        max_tokens: 500,
-        temperature: 0.7,
-      }),
-    });
+    async function callGroq(apiKey: string) {
+      return fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          messages: groqMessages,
+          max_tokens: 500,
+          temperature: 0.7,
+        }),
+      });
+    }
+
+    const chatKey = process.env.GROQ_CHAT_API_KEY ?? "";
+    let groqRes = await callGroq(chatKey);
 
     if (!groqRes.ok) {
       const err = await groqRes.text();
