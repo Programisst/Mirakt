@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const RATE_LIMIT = 3; // запросов
+const RATE_WINDOW_MS = 60 * 60 * 1000; // за час
+const requestLog = new Map<string, number[]>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const timestamps = (requestLog.get(ip) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  timestamps.push(now);
+  requestLog.set(ip, timestamps);
+  return timestamps.length > RATE_LIMIT;
+}
+
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+  if (isRateLimited(ip)) {
+    return NextResponse.json({ error: "Слишком много запросов, попробуйте позже" }, { status: 429 });
+  }
+
   const { name, email, subject, message } = await req.json().catch(() => ({}));
 
   if (!name?.trim() || !email?.trim() || !message?.trim())

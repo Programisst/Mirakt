@@ -10,8 +10,35 @@ function getDb() {
 
 const SYSTEM_PROMPT = `Ты Mirakt AI — ассистент портала Mirakt. Отвечай кратко на русском. Используй список свежих новостей как контекст. На общие вопросы отвечай из своих знаний. Не выдумывай факты.`;
 
+function getToken(req: NextRequest) {
+  return req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
+}
+
+const RATE_LIMIT = 20; // сообщений
+const RATE_WINDOW_MS = 60 * 60 * 1000; // за час
+const requestLog = new Map<string, number[]>();
+
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const timestamps = (requestLog.get(userId) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  timestamps.push(now);
+  requestLog.set(userId, timestamps);
+  return timestamps.length > RATE_LIMIT;
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const token = getToken(req);
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const db = getDb();
+    const { data: { user } } = await db.auth.getUser(token);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    if (isRateLimited(user.id)) {
+      return NextResponse.json({ error: "rate_limit", retryAfter: 3600 }, { status: 429 });
+    }
+
     const { messages } = await req.json() as {
       messages: { role: "user" | "assistant"; content: string }[];
     };
@@ -23,7 +50,6 @@ export async function POST(req: NextRequest) {
     const lastUserMsg = messages[messages.length - 1].content ?? "";
 
     // Fetch recent articles from Supabase for context
-    const db = getDb();
     const CATS = ["world", "russia", "crimea", "economy", "science", "politics"];
     const results = await Promise.all(
       CATS.map((cat) =>
